@@ -113,10 +113,61 @@ SELECT campaign_id, name, created_at FROM campaigns ORDER BY campaign_id;
 
 **Note:** There is no application UI yet. The DevTools executable is deliberately small; we are verifying data access before adding the full DM application. This initial library has not been compiled against your Windows SDK, so report any build errors before proceeding.
 
+## Phase 2: Example town, NPC and persistent memory
+
+Once your initial campaign exists, pull the latest repository changes and build:
+
+```powershell
+cd D:\\dev\\NPCodex
+git pull --ff-only
+dotnet build NPCodex.slnx
+dotnet run --project src/NPCodex.DevTools -- check
+```
+
+Use the campaign ID shown by `check` (do not assume it's 1). To create an example world in your Test Campaign, substitute the ID for `<campaign-id>`:
+
+```powershell
+dotnet run --project src/NPCodex.DevTools -- seed-demo <campaign-id>
+```
+
+The explicit `seed-demo` command adds, **in one transaction**:
+- **Willowford**, a town
+- **The Silver Lantern**, a shop within Willowford
+- **Mira Vale**, a merchant NPC who owns the shop
+- **Rowan (example PC)**, a placeholder player character
+- An encounter on campaign day 1 in which Rowan asks Mira to hold a map
+- A memory belonging to Mira about that agreement
+
+This command is deliberately not idempotent: it refuses to add another copy if Willowford already exists in the chosen campaign, to protect existing campaign data. No schema migration is needed beyond `0001_initial_schema`. Nothing is added until you execute the command yourself.
+
+To inspect all the records:
+
+```powershell
+dotnet run --project src/NPCodex.DevTools -- show-world <campaign-id>
+```
+
+The `show-world` command is intended for the **DM only** and currently prints secret memory content too.
+
+Or inspect the memory and associated encounter in DBeaver:
+
+```sql
+SELECT c.name AS npc, m.content AS memory,
+       i.campaign_day, i.summary AS interaction,
+       m.embedding IS NOT NULL AS embedded
+FROM memories m
+JOIN characters c
+  ON c.campaign_id = m.campaign_id AND c.character_id = m.owner_character_id
+LEFT JOIN interactions i
+  ON i.campaign_id = m.campaign_id AND i.interaction_id = m.source_interaction_id
+WHERE m.campaign_id = 1 -- replace with your Test Campaign ID
+ORDER BY m.memory_id;
+```
+
+The demo memory will have `embedded = false`. That is expected until we add Ollama embedding generation. The new `NPCodexDatabase.World.cs` also exposes APIs to create locations, characters and atomic NPC interactions from a future desktop UI.
+
 ## Next implementation steps
 
-1. Create a small C# database access layer using Npgsql.
-2. Add CRUD for campaigns, locations and characters.
-3. Add Ollama `nomic-embed-text` integration and a background embedding queue.
-4. Implement retrieval limited to the active campaign, relevant NPC memories, and authorised knowledge sources.
-5. Add a thin UI for NPC interactions and memory inspection.
+1. Add Ollama `nomic-embed-text` integration and an embedding worker.
+2. Implement campaign- and character-scoped similarity retrieval for NPC memories.
+3. Implement DM-only versus player-safe access controls before involving an LLM.
+4. Add a desktop UI for managing NPCs and inspecting memory.
