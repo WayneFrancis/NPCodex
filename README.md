@@ -79,6 +79,40 @@ PostgreSQL positional parameter syntax differs from this application-level illus
 
 Foreign keys for campaign-specific data use `(campaign_id, entity_id)` pairs so an NPC in one campaign cannot accidentally reference a location or interaction in another. Records intentionally do not cascade-delete by default; deleting campaign history should be explicit. Nested location cycles involving multiple rows are not yet prevented and must be validated in application logic.
 
+## C# connection test (.NET 10)
+
+The repository now contains a .NET 10 solution (`NPCodex.slnx`):
+
+- `src/NPCodex.Data` — reusable Npgsql data-access library with a database health check and campaign operations
+- `src/NPCodex.DevTools` — simple console tool to check PostgreSQL and create an initial campaign
+
+Install the .NET 10 SDK if `dotnet --list-sdks` does not show a `10.0.xxx` version. Open a terminal at the repository root and run:
+
+```powershell
+git pull --ff-only
+dotnet restore NPCodex.slnx
+dotnet build NPCodex.slnx
+dotnet run --project src/NPCodex.DevTools -- check
+```
+
+The tool connects to `localhost:5432`, database `npcodex`, username `npcodex`. It asks you for the PostgreSQL password without echoing it to the terminal. It does **not** read the local Docker `.env` file. Alternatively, set `NPCODEX_DB_PASSWORD` as a process environment variable (never commit it).
+
+Expected result: PostgreSQL 17.x, pgvector 0.8.7, 13 public tables, migration `0001_initial_schema` installed.
+
+When the check works, create your first campaign:
+
+```powershell
+dotnet run --project src/NPCodex.DevTools -- create-campaign "My First Campaign"
+```
+
+Run the following in DBeaver to inspect the new row:
+
+```sql
+SELECT campaign_id, name, created_at FROM campaigns ORDER BY campaign_id;
+```
+
+**Note:** There is no application UI yet. The DevTools executable is deliberately small; we are verifying data access before adding the full DM application. This initial library has not been compiled against your Windows SDK, so report any build errors before proceeding.
+
 ## Next implementation steps
 
 1. Create a small C# database access layer using Npgsql.
