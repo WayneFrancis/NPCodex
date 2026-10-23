@@ -1,0 +1,19 @@
+# Local secrets and machine-specific settings
+.env
+.env.*
+!.env.example
+*.user
+*.suo
+
+# .NET and Visual Studio
+bin/
+obj/
+.vs/
+TestResults/
+*.csproj.user
+
+# IDE and OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
