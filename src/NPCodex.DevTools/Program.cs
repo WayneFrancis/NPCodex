@@ -2,28 +2,23 @@ using System.Text;
 using NPCodex.Data;
 using Npgsql;
 
-if (args.Length > 0 && args[0] is "--help" or "-h" or "help")
+var verb = args.Length == 0 ? "check" : args[0];
+
+if (verb is "--help" or "-h" or "help")
 {
     ShowUsage();
     return;
 }
 
-if (args.Length > 0 && args[0] != "check" && args[0] != "create-campaign")
+var validArgs = verb switch
 {
-    ShowUsage();
-    Environment.ExitCode = 2;
-    return;
-}
+    "check" => args.Length <= 1,
+    "create-campaign" => args.Length == 2 && !string.IsNullOrWhiteSpace(args[1]),
+    "seed-demo" or "show-world" => args.Length == 2 && IsPositiveId(args[1]),
+    _ => false
+};
 
-if (args.Length > 0 && args[0] == "create-campaign" &&
-    (args.Length != 2 || string.IsNullOrWhiteSpace(args[1])))
-{
-    ShowUsage();
-    Environment.ExitCode = 2;
-    return;
-}
-
-if (args.Length > 1 && args[0] == "check")
+if (!validArgs)
 {
     ShowUsage();
     Environment.ExitCode = 2;
@@ -32,8 +27,7 @@ if (args.Length > 1 && args[0] == "check")
 
 try
 {
-    // Environment variable is optional; when omitted the password is read
-    // interactively without echoing it to the terminal or command history.
+    // Environment variable is optional; otherwise prompt without echoing the password.
     var password = Environment.GetEnvironmentVariable("NPCODEX_DB_PASSWORD")
         ?? ReadPassword();
 
@@ -64,16 +58,35 @@ try
         return;
     }
 
-    if (args.Length == 2 && args[0] == "create-campaign")
+    switch (verb)
     {
-        var id = await db.CreateCampaignAsync(args[1]);
-        Console.WriteLine($"Created campaign {id}: {args[1]}");
+        case "create-campaign":
+        {
+            var id = await db.CreateCampaignAsync(args[1]);
+            Console.WriteLine($"Created campaign {id}: {args[1]}");
+            await PrintCampaignsAsync(db);
+            break;
+        }
+        case "seed-demo":
+        {
+            var campaignId = long.Parse(args[1]);
+            var result = await db.SeedDemoAsync(campaignId);
+            Console.WriteLine("Demo world created in one transaction:");
+            Console.WriteLine($"  Town ID: {result.TownId}");
+            Console.WriteLine($"  Shop ID: {result.ShopId}");
+            Console.WriteLine($"  Merchant NPC ID: {result.MerchantId}");
+            Console.WriteLine($"  Example PC ID: {result.PlayerCharacterId}");
+            Console.WriteLine($"  Interaction ID: {result.InteractionId}");
+            await PrintWorldAsync(db, campaignId);
+            break;
+        }
+        case "show-world":
+            await PrintWorldAsync(db, long.Parse(args[1]));
+            break;
+        default:
+            await PrintCampaignsAsync(db);
+            break;
     }
-
-    var campaigns = await db.GetCampaignsAsync();
-    Console.WriteLine($"Campaigns ({campaigns.Count}):");
-    foreach (var campaign in campaigns)
-        Console.WriteLine($"  {campaign.Id}: {campaign.Name}");
 
     Console.WriteLine("Database access succeeded.");
 }
@@ -93,14 +106,53 @@ catch (Exception ex)
     Environment.ExitCode = 1;
 }
 
+static bool IsPositiveId(string value) => long.TryParse(value, out var id) && id > 0;
+
+static async Task PrintCampaignsAsync(NPCodexDatabase db)
+{
+    var campaigns = await db.GetCampaignsAsync();
+    Console.WriteLine($"Campaigns ({campaigns.Count}):");
+    foreach (var campaign in campaigns)
+        Console.WriteLine($"  {campaign.Id}: {campaign.Name}");
+}
+
+static async Task PrintWorldAsync(NPCodexDatabase db, long campaignId)
+{
+    // DevTools is a DM-only utility: it prints secret memories too.
+    var world = await db.GetCampaignWorldAsync(campaignId);
+    Console.WriteLine($"World for campaign {campaignId}");
+    Console.WriteLine($"Locations ({world.Locations.Count}):");
+    foreach (var item in world.Locations)
+        Console.WriteLine(
+            $"  {item.Id}: {item.Name} [{item.Type}] parent={item.ParentLocationId?.ToString() ?? "none"}");
+
+    Console.WriteLine($"Characters ({world.Characters.Count}):");
+    foreach (var item in world.Characters)
+        Console.WriteLine(
+            $"  {item.Id}: {item.Name} [{item.Type}] occupation={item.Occupation ?? "-"} location={item.CurrentLocationId?.ToString() ?? "-"}");
+
+    Console.WriteLine($"Interactions ({world.Interactions.Count}):");
+    foreach (var item in world.Interactions)
+        Console.WriteLine(
+            $"  {item.Id}: day {item.CampaignDay?.ToString() ?? "?"}, {item.Participants}: {item.Summary}");
+
+    Console.WriteLine($"Memories ({world.Memories.Count}) [DM VIEW — MAY CONTAIN SECRETS]:");
+    foreach (var item in world.Memories)
+        Console.WriteLine(
+            $"  {item.Id}: {item.OwnerName}, importance={item.Importance}, embedding={(item.HasEmbedding ? "yes" : "pending")}{(item.IsSecret ? " [SECRET]" : "")}: {item.Content}");
+}
+
 static void ShowUsage()
 {
     Console.WriteLine("NPCodex developer tool");
     Console.WriteLine("  dotnet run --project src/NPCodex.DevTools -- check");
     Console.WriteLine("  dotnet run --project src/NPCodex.DevTools -- create-campaign \"My Campaign\"");
+    Console.WriteLine("  dotnet run --project src/NPCodex.DevTools -- seed-demo <campaign-id>");
+    Console.WriteLine("  dotnet run --project src/NPCodex.DevTools -- show-world <campaign-id>");
     Console.WriteLine();
     Console.WriteLine("Connection: localhost:5432, database/user npcodex.");
     Console.WriteLine("Password: hidden interactive prompt (or NPCODEX_DB_PASSWORD).");
+    Console.WriteLine("seed-demo only adds fictional example data, and refuses to repeat for the same campaign.");
 }
 
 static string ReadPassword()
