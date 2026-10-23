@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="src/NPCodex.Data/NPCodex.Data.csproj" />
+  <Project Path="src/NPCodex.DevTools/NPCodex.DevTools.csproj" />
+</Solution>
