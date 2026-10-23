@@ -6,7 +6,7 @@ namespace NPCodex.Data;
 /// Single, pool-backed access point for the local NPCodex PostgreSQL database.
 /// Reuse an instance throughout the lifetime of the application.
 /// </summary>
-public sealed class NPCodexDatabase : IAsyncDisposable
+public sealed partial class NPCodexDatabase : IAsyncDisposable
 {
     private readonly NpgsqlDataSource _dataSource;
 
