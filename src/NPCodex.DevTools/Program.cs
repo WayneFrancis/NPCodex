@@ -16,7 +16,7 @@ var validArgs = verb switch
     "create-campaign" => args.Length == 2 && !string.IsNullOrWhiteSpace(args[1]),
     "seed-demo" or "show-world" or "embed-memories" =>
         args.Length == 2 && IsPositiveId(args[1]),
-    "search-memories" => args.Length == 4 &&
+    "search-memories" or "npc-chat" => args.Length == 4 &&
         IsPositiveId(args[1]) && IsPositiveId(args[2]) &&
         !string.IsNullOrWhiteSpace(args[3]),
     _ => false
@@ -109,6 +109,37 @@ try
             Console.WriteLine("DM-only search; results are NOT suitable for display to players.");
             break;
         }
+        case "npc-chat":
+        {
+            var campaignId = long.Parse(args[1]);
+            var npcId = long.Parse(args[2]);
+            var playerSays = args[3];
+
+            using var embedClient = new OllamaEmbeddingClient();
+            using var chatClient = new OllamaChatClient();
+            var memoryService = new NpcMemoryService(db, embedClient);
+            var dialogueService = new NpcDialogueService(db, memoryService, chatClient);
+            var preview = await dialogueService.PreviewReplyAsync(
+                campaignId, npcId, playerSays);
+
+            Console.WriteLine();
+            Console.WriteLine($"NPC: {preview.Npc.Name} (#{preview.Npc.CharacterId})");
+            Console.WriteLine($"Chat model: {preview.ModelName}");
+            Console.WriteLine();
+            Console.WriteLine("--- DM PREVIEW: NPC REPLY ---");
+            Console.WriteLine(preview.Reply);
+            Console.WriteLine("--- END PREVIEW ---");
+            Console.WriteLine();
+            Console.WriteLine($"Retrieved non-secret memories ({preview.RetrievedMemories.Count}):");
+            foreach (var memory in preview.RetrievedMemories)
+                Console.WriteLine(
+                    $"  #{memory.Id} cosine distance {memory.CosineDistance:F4}: {memory.Content}");
+
+            if (preview.RetrievedMemories.Count == 0)
+                Console.WriteLine("  None: check that NPC memories were embedded.");
+            Console.WriteLine("This preview is NOT saved to PostgreSQL. Review it before using it in play.");
+            break;
+        }
         default:
             await PrintCampaignsAsync(db);
             break;
@@ -177,6 +208,7 @@ static void ShowUsage()
     Console.WriteLine("  dotnet run --project src/NPCodex.DevTools -- show-world <campaign-id>");
     Console.WriteLine("  dotnet run --project src/NPCodex.DevTools -- embed-memories <campaign-id>");
     Console.WriteLine("  dotnet run --project src/NPCodex.DevTools -- search-memories <campaign-id> <npc-id> \"your question\"");
+    Console.WriteLine("  dotnet run --project src/NPCodex.DevTools -- npc-chat <campaign-id> <npc-id> \"player's spoken line\"");
     Console.WriteLine();
     Console.WriteLine("Connection: localhost:5432, database/user npcodex.");
     Console.WriteLine("Password: NPCodex root .env file (or NPCODEX_DB_PASSWORD override).");
