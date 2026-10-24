@@ -1,3 +1,4 @@
+using NPCodex.Data;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json.Serialization;
@@ -32,22 +33,35 @@ public sealed class OllamaChatClient : IDisposable
     }
 
     public async Task<string> GenerateAsync(
-        string systemPrompt, string userMessage, CancellationToken cancellationToken = default)
+        string systemPrompt, string userMessage, CancellationToken cancellationToken = default,
+        IReadOnlyList<ConversationTurn>? approvedHistory = null)
     {
         if (string.IsNullOrWhiteSpace(systemPrompt) ||
             string.IsNullOrWhiteSpace(userMessage))
             throw new ArgumentException("System and user messages are required.");
 
+        // Only already-approved turns form short-term conversation context.
+        // Unapproved AI suggestions never become part of model history.
+        var messages = new List<object>
+        {
+            new { role = "system", content = systemPrompt }
+        };
+        if (approvedHistory is not null)
+        {
+            foreach (var turn in approvedHistory.TakeLast(8))
+            {
+                messages.Add(new { role = "user", content = LimitTurn(turn.PlayerLine) });
+                messages.Add(new { role = "assistant", content = LimitTurn(turn.NpcReply) });
+            }
+        }
+        messages.Add(new { role = "user", content = userMessage });
+
         var payload = new
         {
             model = ModelName,
             stream = false,
-            think = false, // Qwen3: return only its user-facing response.
-            messages = new[]
-            {
-                new { role = "system", content = systemPrompt },
-                new { role = "user", content = userMessage }
-            },
+            think = false,
+            messages,
             options = new { temperature = 0.6, num_predict = 250 }
         };
 
@@ -70,6 +84,9 @@ public sealed class OllamaChatClient : IDisposable
 
         return text;
     }
+
+    private static string LimitTurn(string content) =>
+        content.Length <= 1500 ? content : content[..1500] + "…";
 
     public void Dispose() => _client.Dispose();
 
