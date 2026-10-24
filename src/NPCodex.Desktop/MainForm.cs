@@ -137,6 +137,7 @@ public sealed partial class MainForm : Form
         _tabs.TabPages.Add(dialogueTab);
         _tabs.TabPages.Add(_memoriesTab);
         _tabs.TabPages.Add(_personalityTab);
+        _tabs.TabPages.Add(_aliasesTab);
         split.Panel2.Controls.Add(_tabs);
 
         var conversation = new TableLayoutPanel
@@ -245,6 +246,7 @@ public sealed partial class MainForm : Form
 
         BuildMemoryTab();
         BuildPersonalityTab();
+        BuildAliasesTab();
     }
 
     private void BuildMemoryTab()
@@ -295,6 +297,8 @@ public sealed partial class MainForm : Form
                     await LoadMemoriesAsync();
                     await LoadConversationAsync();
                     await LoadPersonalityAsync();
+                    PopulateAliasTargets();
+                    await LoadAliasesAsync();
                 });
             }
         };
@@ -320,6 +324,7 @@ public sealed partial class MainForm : Form
                 await RunBusyAsync(async () =>
                 {
                     await LoadConversationAsync();
+                    PopulateRelationshipTargets(PlayerId);
                     await LoadAttitudeAsync();
                 });
             }
@@ -332,6 +337,7 @@ public sealed partial class MainForm : Form
         _saveMemory.Click += async (_, _) => await RunBusyAsync(SaveMemoryAsync);
         _deleteMemory.Click += async (_, _) => await RunBusyAsync(DeleteMemoryAsync);
         WirePersonalityEvents();
+        WireAliasEvents();
     }
 
     private async Task LoadCampaignsAsync()
@@ -341,7 +347,10 @@ public sealed partial class MainForm : Form
                 "Apply database migration 0002_conversations.sql in DBeaver.");
         if (!await _database.HasPersonalitySchemaAsync())
             throw new InvalidOperationException(
-                "Apply database migration 0003_npc_profiles.sql in DBeaver before starting Phase 7.");
+                "Apply database migration 0003_npc_profiles.sql in DBeaver.");
+        if (!await _database.HasCharacterAliasSchemaAsync())
+            throw new InvalidOperationException(
+                "Apply database migration 0004_character_aliases.sql in DBeaver before starting this update.");
         var previousId = CampaignId;
         var campaigns = await _database.GetCampaignsAsync();
         _ignoreSelectionEvents = true;
@@ -380,6 +389,7 @@ public sealed partial class MainForm : Form
         }
 
         var world = await _database.GetCampaignWorldAsync(campaignId);
+        _campaignCharacters = world.Characters;
         _ignoreSelectionEvents = true;
         try
         {
@@ -396,6 +406,8 @@ public sealed partial class MainForm : Form
         await LoadMemoriesAsync();
         await LoadConversationAsync();
         await LoadPersonalityAsync();
+        PopulateAliasTargets();
+        await LoadAliasesAsync();
         _status.Text = $"Campaign loaded: {world.Characters.Count(c => c.Type == "npc")} NPCs.";
     }
 
@@ -713,7 +725,9 @@ public sealed partial class MainForm : Form
             _newConversation.Enabled = _personalityEditor.Enabled =
             _speechEditor.Enabled = _mannerismsEditor.Enabled =
             _motivationsEditor.Enabled = _privateNotesEditor.Enabled =
-            _attitudeEditor.Enabled = _disposition.Enabled = false;
+            _attitudeEditor.Enabled = _disposition.Enabled = _attitudeTarget.Enabled =
+            _aliasTarget.Enabled = _aliasInput.Enabled =
+            _aliasAdd.Enabled = _aliasDelete.Enabled = false;
         UseWaitCursor = true;
         try { await operation(); }
         catch (Exception ex)
@@ -728,13 +742,16 @@ public sealed partial class MainForm : Form
             _generate.Enabled = _approve.Enabled = _saveMemory.Enabled =
                 _deleteMemory.Enabled = _campaigns.Enabled = _npcs.Enabled = true;
             _saveProfile.Enabled = NpcId is not null;
-            _saveAttitude.Enabled = NpcId is not null && PlayerId is not null;
+            _saveAttitude.Enabled = NpcId is not null &&
+                (_attitudeTarget.SelectedItem as CharacterChoice)?.Id is not null;
             _playerLine.Enabled = _manualReply.Enabled = _newMemory.Enabled =
                 _memoryEditor.Enabled = _memories.Enabled = _playerCharacters.Enabled =
                 _newConversation.Enabled = _personalityEditor.Enabled =
                 _speechEditor.Enabled = _mannerismsEditor.Enabled =
                 _motivationsEditor.Enabled = _privateNotesEditor.Enabled =
-                _attitudeEditor.Enabled = _disposition.Enabled = true;
+                _attitudeEditor.Enabled = _disposition.Enabled = _attitudeTarget.Enabled =
+                _aliasTarget.Enabled = _aliasInput.Enabled =
+                _aliasAdd.Enabled = _aliasDelete.Enabled = true;
         }
     }
 
