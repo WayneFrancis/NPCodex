@@ -95,7 +95,11 @@ dotnet build NPCodex.slnx
 dotnet run --project src/NPCodex.DevTools -- check
 ```
 
-The tool connects to `localhost:5432`, database `npcodex`, username `npcodex`. It asks you for the PostgreSQL password without echoing it to the terminal. It does **not** read the local Docker `.env` file. Alternatively, set `NPCODEX_DB_PASSWORD` as a process environment variable (never commit it).
+The tool connects to `localhost:5432`, database `npcodex`, username `npcodex`. It automatically obtains the password from **the same root `.env` file used by Docker Compose**; there is no prompt. The shared `NPCodexConnectionSettings.CreateLocalConnectionString()` helper lives in `NPCodex.Data`, so future .NET apps can use it too. It searches the working directory and application directory, walking upward to locate `.env`.
+
+If `NPCODEX_DB_PASSWORD` is already set in the process environment, that takes priority over the file. Your existing `.env` can contain, for example, `NPCODEX_DB_PASSWORD='a$literal-dollar-sign-password'` and the single quotes are removed without interpreting the dollar sign.
+
+Do **not** commit your `.env` file, print the resolved connection string, or log passwords. For a packaged or deployed application running outside the source tree, supply credentials through an appropriate environment/secret mechanism rather than relying on an accessible development `.env` file. The helper only reads the password key from `.env`, not unrelated settings.
 
 Expected result: PostgreSQL 17.x, pgvector 0.8.7, 13 public tables, migration `0001_initial_schema` installed.
 
