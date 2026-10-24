@@ -457,3 +457,69 @@ The relationship is directional: **Mira's opinion of Rowan is not Rowan's opinio
 The `npc_profiles` columns `personality_traits`, `speaking_style`, `mannerisms`, and `motivations` are supplied to local Qwen3 alongside non-secret NPC memories. `private_dm_notes` is not. The NPC-specific selected PC's relationship is used only when that PC is selected; the existing command-line `npc-chat` test has no PC selection and therefore doesn't include a relationship opinion.
 
 This is still a **DM-only development application**. Free-text personality or relationship content can contain unintentional spoilers, and LLM output may diverge from the desired tone; review each suggestion before approving it. Personality fields are stored without embedding since they are loaded directly for each generation. Approved conversations and long-term NPC memories continue to behave as before. This revision has been committed but not yet compiled in the Windows environment.
+
+
+### Phase 7 follow-up: disposition not noticeably changing replies
+
+The original personality implementation sent a numerical disposition in JSON with
+only a weak prompt instruction. Small local chat models often treated that as
+background flavour. The dialogue service now adds explicit **behavioural guidance**
+for seven disposition ranges: deeply hostile, strongly unfriendly, wary, neutral,
+cautiously friendly, friendly, and strongly loyal/warm. This affects how warmly
+the NPC addresses the selected PC, trust, patience and willingness to help
+without fabricating reasons for the relationship.
+
+Pull and build; **no new migration** is needed for this fix:
+
+```powershell
+cd D:\dev\NPCodex
+git pull --ff-only
+dotnet build NPCodex.slnx
+dotnet run --project src/NPCodex.Desktop
+```
+
+To test with Mira:
+
+1. Select **Mira Vale** **and Rowan** in the left sidebar. Selecting only
+   Mira leaves the target PC unspecified, so no directed disposition is applied.
+2. Under **Personality & Relationships**, set Rowan's disposition to `-100`.
+   Ensure **Private opinion — do not send to Qwen** is **unchecked** and click
+   **Save NPC opinion of player**. If checked, the opinion is deliberately not
+   included in the model prompt, regardless of its score.
+3. On the **Dialogue** tab, ask the same question as before and click
+   **Generate 3 replies**. Read the new line immediately below the button; it
+   should say something like `Applied Mira Vale → Rowan: -100 (deeply hostile).`.
+   If it says *No player character selected*, *No saved attitude* or
+   *PRIVATE — not sent to Qwen*, the relationship cannot affect the replies.
+4. Change the score to `+35`, save again, and regenerate with the **same**
+   question. The diagnostic line should now read
+   `Applied Mira Vale → Rowan: +35 (cautiously friendly).`.
+5. Compare the replies. A deeply hostile NPC should be distinctly colder and
+   less inclined to assist than a cautiously friendly one, while honouring
+   previously established campaign facts.
+
+If testing in a previously established conversation, bear in mind that Qwen
+receives the last eight approved dialogue turns. To isolate the disposition
+effect, **End conversation / start new** before each test. Do not approve any
+test replies unless they are intended to be part of the campaign.
+
+To check the saved setting directly in DBeaver, replace the names if needed:
+
+```sql
+SELECT npc.name AS npc, pc.name AS player, r.disposition, r.is_secret,
+       r.description
+FROM character_relationships r
+JOIN characters npc
+  ON npc.campaign_id = r.campaign_id
+ AND npc.character_id = r.source_character_id
+JOIN characters pc
+  ON pc.campaign_id = r.campaign_id
+ AND pc.character_id = r.target_character_id
+WHERE npc.name = 'Mira Vale'
+  AND pc.name LIKE 'Rowan%'
+  AND r.relationship_type = 'attitude';
+```
+
+NPCodex still provides **draft replies only**; DM approval is mandatory,
+and local Qwen3 output is probabilistic, so behavioural instructions improve
+consistency but cannot guarantee exact phrasing.
