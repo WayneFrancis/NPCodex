@@ -47,6 +47,9 @@ try
         && await db.HasConversationSchemaAsync();
     Console.WriteLine($"Conversation migration: {(conversationsInstalled ? "installed" : "NOT installed")}");
 
+    var personalityInstalled = conversationsInstalled && await db.HasPersonalitySchemaAsync();
+    Console.WriteLine($"Personality migration: {(personalityInstalled ? "installed" : "NOT installed")}");
+
     if (!status.InitialMigrationInstalled || status.PgvectorVersion == "not installed")
     {
         Console.Error.WriteLine(
