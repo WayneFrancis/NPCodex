@@ -53,4 +53,30 @@ public sealed partial class NPCodexDatabase
             reader.IsDBNull(3) ? null : reader.GetString(3),
             reader.IsDBNull(4) ? null : reader.GetString(4));
     }
+    /// <summary>
+    /// Resolve the exact player-character name in the selected campaign.
+    /// A saved relationship is optional; speaker identity is not.
+    /// </summary>
+    public async Task<string> GetPlayerCharacterNameAsync(
+        long campaignId, long playerCharacterId,
+        CancellationToken cancellationToken = default)
+    {
+        RequireCampaignId(campaignId);
+        if (playerCharacterId <= 0)
+            throw new ArgumentOutOfRangeException(nameof(playerCharacterId));
+
+        const string sql = """
+            SELECT name
+            FROM characters
+            WHERE campaign_id = $1 AND character_id = $2
+              AND character_type = 'pc'
+            """;
+        await using var command = _dataSource.CreateCommand(sql);
+        command.Parameters.AddWithValue(campaignId);
+        command.Parameters.AddWithValue(playerCharacterId);
+        return await command.ExecuteScalarAsync(cancellationToken) as string
+            ?? throw new InvalidOperationException(
+                $"Player character #{playerCharacterId} was not found in campaign #{campaignId}.");
+    }
+
 }
