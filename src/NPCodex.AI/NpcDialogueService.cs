@@ -250,18 +250,31 @@ public sealed class NpcDialogueService
             if (speakerAliases.Length > 0 &&
                 SpeakerReferenceCheck.MentionsSpeakerAsThirdParty(reply, speakerAliases))
             {
-                var revision = await ReviseSpeakerWordingAsync(
-                    npc.Name, speakerAliases, reply, cancellationToken);
-                if (!SpeakerReferenceCheck.MentionsSpeakerAsThirdParty(
-                        revision, speakerAliases))
+                try
                 {
-                    reply = revision;
-                    adjusted = true;
+                    var revision = await ReviseSpeakerWordingAsync(
+                        npc.Name, speakerAliases, reply, cancellationToken);
+                    if (!SpeakerReferenceCheck.MentionsSpeakerAsThirdParty(
+                            revision, speakerAliases))
+                    {
+                        reply = revision;
+                        adjusted = true;
+                    }
+                    else
+                    {
+                        // Do not silently accept a second likely perspective error.
+                        reviewNeeded = true;
+                    }
                 }
-                else
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
-                    // Preserve original and flag it, rather than presenting an
-                    // unverified rewritten answer as automatically correct.
+                    throw;
+                }
+                catch (Exception)
+                {
+                    // The original candidate is still a useful editable draft.
+                    // A failed optional revision must not discard it, but it
+                    // must remain explicitly flagged for DM inspection.
                     reviewNeeded = true;
                 }
             }
