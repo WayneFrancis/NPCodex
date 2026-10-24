@@ -82,7 +82,8 @@ public sealed partial class NPCodexDatabase
     /// </summary>
     public async Task<IReadOnlyList<MemoryMatch>> SearchNpcMemoriesAsync(
         long campaignId, long npcId, string embeddingModel, float[] queryEmbedding,
-        int maxResults = 5, CancellationToken cancellationToken = default)
+        int maxResults = 5, CancellationToken cancellationToken = default,
+        bool includeSecretMemories = true)
     {
         RequireCampaignId(campaignId);
         if (npcId <= 0)
@@ -104,6 +105,7 @@ public sealed partial class NPCodexDatabase
               AND m.owner_character_id = $2
               AND m.embedding_model = $3
               AND m.embedding IS NOT NULL
+              AND ($6 OR m.is_secret = false)
             ORDER BY m.embedding <=> $4, m.memory_id
             LIMIT $5
             """;
@@ -115,6 +117,7 @@ public sealed partial class NPCodexDatabase
         command.Parameters.AddWithValue(embeddingModel);
         command.Parameters.AddWithValue(new Vector(queryEmbedding));
         command.Parameters.AddWithValue(maxResults);
+        command.Parameters.AddWithValue(includeSecretMemories);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
