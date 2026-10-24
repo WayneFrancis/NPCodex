@@ -693,8 +693,9 @@ public sealed partial class MainForm : Form
             UseWaitCursor = false;
             _busy = false;
             _generate.Enabled = _approve.Enabled = _saveMemory.Enabled =
-                _deleteMemory.Enabled = _campaigns.Enabled = _npcs.Enabled =
-                _saveProfile.Enabled = _saveAttitude.Enabled = true;
+                _deleteMemory.Enabled = _campaigns.Enabled = _npcs.Enabled = true;
+            _saveProfile.Enabled = NpcId is not null;
+            _saveAttitude.Enabled = NpcId is not null && PlayerId is not null;
             _playerLine.Enabled = _manualReply.Enabled = _newMemory.Enabled =
                 _memoryEditor.Enabled = _memories.Enabled = _playerCharacters.Enabled =
                 _newConversation.Enabled = _personalityEditor.Enabled =
