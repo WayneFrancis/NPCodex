@@ -89,6 +89,11 @@ public sealed class NpcDialogueService
         var personality = await _database.GetNpcPersonalityAsync(
             campaignId, npcId, cancellationToken);
 
+        // Name/alias resolution is campaign-scoped. A bare name shared by two
+        // characters is not used to identify a mentioned NPC.
+        var campaignNames = await _database.GetCampaignCharacterNamesAsync(
+            campaignId, cancellationToken);
+
         // Resolve the active speaker even when no attitude record exists.
         // Memories refer to people by name, but the NPC is talking directly
         // TO the chosen player character, not ABOUT an absent third party.
@@ -97,9 +102,9 @@ public sealed class NpcDialogueService
                 campaignId, selectedPlayerId, cancellationToken)
             : null;
 
-        var speakerAliases = speakerName is null
-            ? Array.Empty<string>()
-            : SpeakerReferenceCheck.GetKnownNames(speakerName).ToArray();
+        var speakerAliases = playerCharacterId is long speakerId
+            ? CampaignNameMatcher.NamesOf(campaignNames, speakerId).ToArray()
+            : Array.Empty<string>();
 
         NpcAttitude? attitude = playerCharacterId is long pcId
             ? await _database.GetNpcAttitudeAsync(campaignId, npcId, pcId, cancellationToken)
@@ -140,6 +145,20 @@ public sealed class NpcDialogueService
         if (speakerName is not null)
             relationshipStatus = $"Speaking to {speakerName}. " + relationshipStatus;
 
+        // Include a different NPC's *non-secret, directed* relationship
+        // only when that NPC is named unambiguously in this player's question.
+        // A generic query must not reveal the speaker NPC's entire social graph.
+        var referencedNpcRelationships = (await _database.GetNpcRelationshipsAsync(
+            campaignId, npcId, cancellationToken))
+            .Where(r => r.TargetType == "npc" && !r.IsSecret &&
+                        CampaignNameMatcher.Mentions(
+                            playerSays, campaignNames, r.TargetId))
+            .Take(5)
+            .ToArray();
+        if (referencedNpcRelationships.Length > 0)
+            relationshipStatus += " Referenced NPCs: " +
+                string.Join(", ", referencedNpcRelationships.Select(r => r.TargetName)) + ".";
+
         // No private DM notes, biographies or secret-marked memories included.
         var context = JsonSerializer.Serialize(new
         {
@@ -162,6 +181,13 @@ public sealed class NpcDialogueService
                 disposition = attitude.Disposition,
                 subjectiveOpinion = attitude.Description
             },
+            opinionsOfMentionedNpcs = referencedNpcRelationships.Select(r => new
+            {
+                npcName = r.TargetName,
+                knownAliases = CampaignNameMatcher.NamesOf(campaignNames, r.TargetId),
+                disposition = r.Disposition,
+                subjectiveOpinion = r.Description
+            }).ToArray(),
             memories = memories.Select(m => new { memoryId = m.Id, content = m.Content })
         });
 
@@ -185,6 +211,15 @@ public sealed class NpcDialogueService
             If a directed relationship is provided, adapt warmth/caution
             using its disposition (-100 strongly negative, +100 positive).
             The relationship is the NPC's subjective view, not objective fact.
+            If opinionsOfMentionedNpcs contains an entry, it is your
+            CHARACTER'S subjective attitude toward an NPC being mentioned by
+            the player. It is NOT your opinion of the current speaker.
+            Express that stance naturally when discussing the mentioned NPC.
+            Never treat an opinion as an objective fact or invent an incident.
+            If an NPC has multiple names in knownAliases, those names all
+            identify one character; do not invent two different people.
+            Only use the named relationships actually provided, not a guessed
+            relationship toward other characters.
             A stylistic variant must not reverse personality or opinion.
             When a directed attitude is provided, it is a key part of the
             character's current behaviour, NOT a minor flavour detail.
