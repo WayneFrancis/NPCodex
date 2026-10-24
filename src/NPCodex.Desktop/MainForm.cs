@@ -35,6 +35,15 @@ public sealed class MainForm : Form
     private readonly ListBox _sources = new() { Dock = DockStyle.Fill, IntegralHeight = false };
     private readonly TabControl _tabs = new() { Dock = DockStyle.Fill };
     private readonly TabPage _memoriesTab = new("Memories");
+    private readonly Button _newConversation = new() { Text = "End conversation / start new", AutoSize = true };
+    private readonly Label _conversationLabel = new() { AutoSize = true, Text = "No active conversation" };
+    private readonly RichTextBox _history = new()
+    {
+        Dock = DockStyle.Fill, ReadOnly = true,
+        BackColor = SystemColors.Window, BorderStyle = BorderStyle.None
+    };
+    private long? _activeConversationId;
+    private IReadOnlyList<ConversationTurn> _approvedTurns = Array.Empty<ConversationTurn>();
     private readonly ListBox _memories = new() { Dock = DockStyle.Fill, IntegralHeight = false };
     private readonly TextBox _memoryEditor = new() { Dock = DockStyle.Fill, Multiline = true, ScrollBars = ScrollBars.Vertical };
     private readonly NumericUpDown _importance = new() { Minimum = 1, Maximum = 5, Value = 3, Width = 55 };
@@ -123,9 +132,10 @@ public sealed class MainForm : Form
 
         var conversation = new TableLayoutPanel
         {
-            Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 7,
+            Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 8,
             Padding = new Padding(9), AutoScroll = true
         };
+        conversation.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
         conversation.RowStyles.Add(new RowStyle(SizeType.Absolute, 102));
         conversation.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
         conversation.RowStyles.Add(new RowStyle(SizeType.Absolute, 244));
@@ -135,15 +145,21 @@ public sealed class MainForm : Form
         conversation.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         dialogueTab.Controls.Add(conversation);
 
+        var conversationBar = new FlowLayoutPanel { Dock = DockStyle.Fill };
+        conversationBar.Controls.Add(_newConversation);
+        _conversationLabel.Padding = new Padding(12, 9, 0, 0);
+        conversationBar.Controls.Add(_conversationLabel);
+        conversation.Controls.Add(conversationBar, 0, 0);
+
         var playerGroup = new GroupBox { Text = "What the player says", Dock = DockStyle.Fill };
         playerGroup.Controls.Add(_playerLine);
-        conversation.Controls.Add(playerGroup, 0, 0);
+        conversation.Controls.Add(playerGroup, 0, 1);
 
         var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight };
         actions.Controls.Add(_generate);
         actions.Controls.Add(new Label { Text = "Suggestions are drafts, not campaign facts.",
             AutoSize = true, Padding = new Padding(8, 9, 0, 0) });
-        conversation.Controls.Add(actions, 0, 1);
+        conversation.Controls.Add(actions, 0, 2);
 
         var choices = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1 };
         for (var i = 0; i < 3; i++)
@@ -166,7 +182,7 @@ public sealed class MainForm : Form
             _choiceChecks[i] = check;
             _choiceTexts[i] = editor;
         }
-        conversation.Controls.Add(choices, 0, 2);
+        conversation.Controls.Add(choices, 0, 3);
 
         var manualGroup = new GroupBox { Text = "Or write your own dialogue", Dock = DockStyle.Fill };
         var manualLayout = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2, ColumnCount = 1 };
@@ -176,7 +192,7 @@ public sealed class MainForm : Form
         manualLayout.Controls.Add(_manualReply, 0, 1);
         manualGroup.Controls.Add(manualLayout);
         _manualReply.Enter += (_, _) => _manualChoice.Checked = true;
-        conversation.Controls.Add(manualGroup, 0, 3);
+        conversation.Controls.Add(manualGroup, 0, 4);
 
         var memoryGroup = new GroupBox { Text = "Optional memory — write only what actually happened", Dock = DockStyle.Fill };
         var memoryLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
@@ -192,17 +208,22 @@ public sealed class MainForm : Form
         memoryLayout.Controls.Add(settings, 0, 0);
         memoryLayout.Controls.Add(_newMemory, 0, 1);
         memoryGroup.Controls.Add(memoryLayout);
-        conversation.Controls.Add(memoryGroup, 0, 4);
+        conversation.Controls.Add(memoryGroup, 0, 5);
 
         var saveRow = new FlowLayoutPanel { Dock = DockStyle.Fill };
         saveRow.Controls.Add(_approve);
         saveRow.Controls.Add(new Label { Text = "Saves the chosen dialogue; memory is optional.",
             AutoSize = true, Padding = new Padding(8, 9, 0, 0) });
-        conversation.Controls.Add(saveRow, 0, 5);
+        conversation.Controls.Add(saveRow, 0, 6);
 
-        var sourcesGroup = new GroupBox { Text = "Retrieved memories — DM reference only", Dock = DockStyle.Fill };
-        sourcesGroup.Controls.Add(_sources);
-        conversation.Controls.Add(sourcesGroup, 0, 6);
+        var contextTabs = new TabControl { Dock = DockStyle.Fill };
+        var historyTab = new TabPage("Approved conversation history");
+        historyTab.Controls.Add(_history);
+        var sourcesTab = new TabPage("Retrieved long-term memories (DM only)");
+        sourcesTab.Controls.Add(_sources);
+        contextTabs.TabPages.Add(historyTab);
+        contextTabs.TabPages.Add(sourcesTab);
+        conversation.Controls.Add(contextTabs, 0, 7);
 
         BuildMemoryTab();
     }
@@ -250,7 +271,11 @@ public sealed class MainForm : Form
             if (!_ignoreSelectionEvents && !_busy)
             {
                 ResetDialogue();
-                await RunBusyAsync(() => LoadMemoriesAsync());
+                await RunBusyAsync(async () =>
+                {
+                    await LoadMemoriesAsync();
+                    await LoadConversationAsync();
+                });
             }
         };
         _playerLine.TextChanged += (_, _) => { if (!_busy) ResetSuggestions(); };
@@ -267,6 +292,15 @@ public sealed class MainForm : Form
             if (_manualChoice.Checked) SelectChoice(-1);
         };
         _draftMemoryButton.Click += (_, _) => DraftMemoryFromDialogue();
+        _playerCharacters.SelectedIndexChanged += async (_, _) =>
+        {
+            if (!_ignoreSelectionEvents && !_busy)
+            {
+                ResetDialogue();
+                await RunBusyAsync(LoadConversationAsync);
+            }
+        };
+        _newConversation.Click += async (_, _) => await RunBusyAsync(EndConversationAsync);
         _generate.Click += async (_, _) => await RunBusyAsync(GenerateAsync);
         _approve.Click += async (_, _) => await RunBusyAsync(ApproveAsync);
         _memories.SelectedIndexChanged += (_, _) => SelectMemory();
@@ -277,6 +311,10 @@ public sealed class MainForm : Form
 
     private async Task LoadCampaignsAsync()
     {
+        if (!await _database.HasConversationSchemaAsync())
+            throw new InvalidOperationException(
+                "NPCodex needs database migration 0002_conversations.sql. " +
+                "Apply it once through DBeaver before launching Phase 6.");
         var previousId = CampaignId;
         var campaigns = await _database.GetCampaignsAsync();
         _ignoreSelectionEvents = true;
@@ -329,7 +367,60 @@ public sealed class MainForm : Form
         finally { _ignoreSelectionEvents = false; }
 
         await LoadMemoriesAsync();
+        await LoadConversationAsync();
         _status.Text = $"Campaign loaded: {world.Characters.Count(c => c.Type == "npc")} NPCs.";
+    }
+
+    private async Task LoadConversationAsync()
+    {
+        _activeConversationId = null;
+        _approvedTurns = Array.Empty<ConversationTurn>();
+        _history.Clear();
+        _conversationLabel.Text = "No active conversation — the first approved reply starts one.";
+        if (CampaignId is not long campaignId || NpcId is not long npcId) return;
+
+        var session = await _database.FindOpenConversationAsync(
+            campaignId, npcId, PlayerId);
+        if (session is null) return;
+
+        _activeConversationId = session.Id;
+        _approvedTurns = await _database.GetConversationTurnsAsync(
+            campaignId, npcId, session.Id);
+        _conversationLabel.Text = $"Conversation #{session.Id} — {_approvedTurns.Count} approved exchanges";
+
+        var sb = new System.Text.StringBuilder();
+        foreach (var turn in _approvedTurns)
+        {
+            sb.AppendLine($"Player: {turn.PlayerLine}");
+            sb.AppendLine($"NPC: {turn.NpcReply}");
+            sb.AppendLine();
+        }
+        _history.Text = sb.ToString();
+        _history.SelectionStart = _history.TextLength;
+        _history.ScrollToCaret();
+    }
+
+    private async Task EndConversationAsync()
+    {
+        if (CampaignId is not long campaignId || NpcId is not long npcId)
+            throw new InvalidOperationException("Select an NPC first.");
+
+        var text = _activeConversationId is null
+            ? "Discard any current, unapproved text and start a fresh conversation?"
+            : "End this conversation? Its approved transcript will be preserved. " +
+              "A new conversation starts with your next approved reply.";
+        if (MessageBox.Show(text, "New conversation",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+            return;
+
+        if (_activeConversationId is long sessionId)
+            if (!await _database.EndConversationAsync(campaignId, npcId, sessionId))
+                throw new InvalidOperationException(
+                    "Could not end the conversation. Refresh to check its state.");
+
+        ResetDialogue();
+        await LoadConversationAsync();
+        _status.Text = "Ready for a fresh conversation. Previous approved records remain saved.";
     }
 
     private async Task LoadMemoriesAsync(long? selectId = null)
@@ -423,7 +514,8 @@ public sealed class MainForm : Form
         ResetSuggestions();
         _status.Text = "Generating three reply candidates using local Ollama...";
         var choices = await _dialogueService.GenerateOptionsAsync(
-            campaignId, npcId, _playerLine.Text);
+            campaignId, npcId, _playerLine.Text,
+            approvedHistory: _approvedTurns);
         _latestOptions = choices;
         for (var i = 0; i < choices.Options.Count; i++)
         {
@@ -503,13 +595,15 @@ public sealed class MainForm : Form
         var result = await _database.RecordApprovedDialogueAsync(
             campaignId, npcId, PlayerId, _playerLine.Text, reply,
             withMemory ? _newMemory.Text : null,
-            (short)_newMemoryImportance.Value, _newMemorySecret.Checked);
+            (short)_newMemoryImportance.Value, _newMemorySecret.Checked,
+            conversationId: _activeConversationId);
 
         var embedded = result.MemoryId is long memoryId
             ? await EmbedSavedMemoryAsync(campaignId, memoryId)
             : false;
 
         await LoadMemoriesAsync(result.MemoryId);
+        await LoadConversationAsync();
         _playerLine.Clear();
         _manualReply.Clear();
         _newMemory.Clear();
@@ -569,7 +663,8 @@ public sealed class MainForm : Form
         _generate.Enabled = _approve.Enabled = _saveMemory.Enabled =
             _deleteMemory.Enabled = _campaigns.Enabled = _npcs.Enabled = false;
         _playerLine.Enabled = _manualReply.Enabled = _newMemory.Enabled =
-            _memoryEditor.Enabled = _memories.Enabled = _playerCharacters.Enabled = false;
+            _memoryEditor.Enabled = _memories.Enabled = _playerCharacters.Enabled =
+            _newConversation.Enabled = false;
         UseWaitCursor = true;
         try { await operation(); }
         catch (Exception ex)
@@ -584,7 +679,8 @@ public sealed class MainForm : Form
             _generate.Enabled = _approve.Enabled = _saveMemory.Enabled =
                 _deleteMemory.Enabled = _campaigns.Enabled = _npcs.Enabled = true;
             _playerLine.Enabled = _manualReply.Enabled = _newMemory.Enabled =
-                _memoryEditor.Enabled = _memories.Enabled = _playerCharacters.Enabled = true;
+                _memoryEditor.Enabled = _memories.Enabled = _playerCharacters.Enabled =
+                _newConversation.Enabled = true;
         }
     }
 
