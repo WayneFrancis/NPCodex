@@ -9,7 +9,7 @@ namespace NPCodex.Desktop;
 /// Initial DM-only WinForms workspace. Deliberately not player-facing:
 /// suggested dialogue is never saved until the DM explicitly approves it.
 /// </summary>
-public sealed class MainForm : Form
+public sealed partial class MainForm : Form
 {
     private readonly NPCodexDatabase _database;
     private readonly OllamaEmbeddingClient _embeddingClient = new();
@@ -128,6 +128,7 @@ public sealed class MainForm : Form
         var dialogueTab = new TabPage("Dialogue");
         _tabs.TabPages.Add(dialogueTab);
         _tabs.TabPages.Add(_memoriesTab);
+        _tabs.TabPages.Add(_personalityTab);
         split.Panel2.Controls.Add(_tabs);
 
         var conversation = new TableLayoutPanel
@@ -226,6 +227,7 @@ public sealed class MainForm : Form
         conversation.Controls.Add(contextTabs, 0, 7);
 
         BuildMemoryTab();
+        BuildPersonalityTab();
     }
 
     private void BuildMemoryTab()
@@ -275,6 +277,7 @@ public sealed class MainForm : Form
                 {
                     await LoadMemoriesAsync();
                     await LoadConversationAsync();
+                    await LoadPersonalityAsync();
                 });
             }
         };
@@ -297,7 +300,11 @@ public sealed class MainForm : Form
             if (!_ignoreSelectionEvents && !_busy)
             {
                 ResetDialogue();
-                await RunBusyAsync(LoadConversationAsync);
+                await RunBusyAsync(async () =>
+                {
+                    await LoadConversationAsync();
+                    await LoadAttitudeAsync();
+                });
             }
         };
         _newConversation.Click += async (_, _) => await RunBusyAsync(EndConversationAsync);
@@ -307,14 +314,17 @@ public sealed class MainForm : Form
         _newMemoryButton.Click += (_, _) => ClearMemoryEditor();
         _saveMemory.Click += async (_, _) => await RunBusyAsync(SaveMemoryAsync);
         _deleteMemory.Click += async (_, _) => await RunBusyAsync(DeleteMemoryAsync);
+        WirePersonalityEvents();
     }
 
     private async Task LoadCampaignsAsync()
     {
         if (!await _database.HasConversationSchemaAsync())
             throw new InvalidOperationException(
-                "NPCodex needs database migration 0002_conversations.sql. " +
-                "Apply it once through DBeaver before launching Phase 6.");
+                "Apply database migration 0002_conversations.sql in DBeaver.");
+        if (!await _database.HasPersonalitySchemaAsync())
+            throw new InvalidOperationException(
+                "Apply database migration 0003_npc_profiles.sql in DBeaver before starting Phase 7.");
         var previousId = CampaignId;
         var campaigns = await _database.GetCampaignsAsync();
         _ignoreSelectionEvents = true;
@@ -368,6 +378,7 @@ public sealed class MainForm : Form
 
         await LoadMemoriesAsync();
         await LoadConversationAsync();
+        await LoadPersonalityAsync();
         _status.Text = $"Campaign loaded: {world.Characters.Count(c => c.Type == "npc")} NPCs.";
     }
 
@@ -515,7 +526,8 @@ public sealed class MainForm : Form
         _status.Text = "Generating three reply candidates using local Ollama...";
         var choices = await _dialogueService.GenerateOptionsAsync(
             campaignId, npcId, _playerLine.Text,
-            approvedHistory: _approvedTurns);
+            approvedHistory: _approvedTurns,
+            playerCharacterId: PlayerId);
         _latestOptions = choices;
         for (var i = 0; i < choices.Options.Count; i++)
         {
@@ -661,10 +673,14 @@ public sealed class MainForm : Form
         if (_busy) return;
         _busy = true;
         _generate.Enabled = _approve.Enabled = _saveMemory.Enabled =
-            _deleteMemory.Enabled = _campaigns.Enabled = _npcs.Enabled = false;
+            _deleteMemory.Enabled = _campaigns.Enabled = _npcs.Enabled =
+            _saveProfile.Enabled = _saveAttitude.Enabled = false;
         _playerLine.Enabled = _manualReply.Enabled = _newMemory.Enabled =
             _memoryEditor.Enabled = _memories.Enabled = _playerCharacters.Enabled =
-            _newConversation.Enabled = false;
+            _newConversation.Enabled = _personalityEditor.Enabled =
+            _speechEditor.Enabled = _mannerismsEditor.Enabled =
+            _motivationsEditor.Enabled = _privateNotesEditor.Enabled =
+            _attitudeEditor.Enabled = _disposition.Enabled = false;
         UseWaitCursor = true;
         try { await operation(); }
         catch (Exception ex)
@@ -677,10 +693,14 @@ public sealed class MainForm : Form
             UseWaitCursor = false;
             _busy = false;
             _generate.Enabled = _approve.Enabled = _saveMemory.Enabled =
-                _deleteMemory.Enabled = _campaigns.Enabled = _npcs.Enabled = true;
+                _deleteMemory.Enabled = _campaigns.Enabled = _npcs.Enabled =
+                _saveProfile.Enabled = _saveAttitude.Enabled = true;
             _playerLine.Enabled = _manualReply.Enabled = _newMemory.Enabled =
                 _memoryEditor.Enabled = _memories.Enabled = _playerCharacters.Enabled =
-                _newConversation.Enabled = true;
+                _newConversation.Enabled = _personalityEditor.Enabled =
+                _speechEditor.Enabled = _mannerismsEditor.Enabled =
+                _motivationsEditor.Enabled = _privateNotesEditor.Enabled =
+                _attitudeEditor.Enabled = _disposition.Enabled = true;
         }
     }
 
