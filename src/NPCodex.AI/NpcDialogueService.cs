@@ -58,7 +58,8 @@ public sealed class NpcDialogueService
     public async Task<NpcDialogueChoices> GenerateOptionsAsync(
         long campaignId, long npcId, string playerSays, int count = 3,
         CancellationToken cancellationToken = default,
-        IReadOnlyList<ConversationTurn>? approvedHistory = null)
+        IReadOnlyList<ConversationTurn>? approvedHistory = null,
+        long? playerCharacterId = null)
     {
         if (string.IsNullOrWhiteSpace(playerSays) || playerSays.Length > 1200)
             throw new ArgumentException(
@@ -75,6 +76,15 @@ public sealed class NpcDialogueService
             campaignId, npcId, playerSays, maxResults: 5,
             cancellationToken: cancellationToken, includeSecretMemories: false);
 
+        var personality = await _database.GetNpcPersonalityAsync(
+            campaignId, npcId, cancellationToken);
+        NpcAttitude? attitude = playerCharacterId is long pcId
+            ? await _database.GetNpcAttitudeAsync(campaignId, npcId, pcId, cancellationToken)
+            : null;
+        // Private DM notes and secret-flagged relationships NEVER enter
+        // the LLM reference context. The DM still reviews every suggestion.
+        if (attitude?.IsSecret == true) attitude = null;
+
         // No private DM notes, biographies or secret-marked memories included.
         var context = JsonSerializer.Serialize(new
         {
@@ -82,12 +92,31 @@ public sealed class NpcDialogueService
             occupation = npc.Occupation,
             currentLocation = npc.CurrentLocation,
             locationRoles = npc.LocationRoles,
+            personality = new
+            {
+                traits = personality.PersonalityTraits,
+                speakingStyle = personality.SpeakingStyle,
+                mannerisms = personality.Mannerisms,
+                motivations = personality.Motivations
+            },
+            relationshipWithPlayer = attitude is null ? null : new
+            {
+                playerName = attitude.TargetCharacterName,
+                disposition = attitude.Disposition,
+                subjectiveOpinion = attitude.Description
+            },
             memories = memories.Select(m => new { memoryId = m.Id, content = m.Content })
         });
 
         const string instruction = """
             You portray a fictional NPC in a tabletop roleplaying game.
             Reply ONLY as the NPC, in first person, to the player's words.
+            Follow the NPC's defined personality, motivations, habits and
+            speaking style consistently, including across different options.
+            If a directed relationship is provided, adapt warmth/caution
+            using its disposition (-100 strongly negative, +100 positive).
+            The relationship is the NPC's subjective view, not objective fact.
+            A stylistic variant must not reverse personality or opinion.
             Keep it concise: one or two short paragraphs, preferably under 100 words.
             Do not speak for the player or invent player actions.
             Use stored memories as the NPC's recollections, not objective proof.
