@@ -117,10 +117,10 @@ public sealed partial class MainForm
         attitudeGrid.Controls.Add(ProfileLabel("NPC's opinion / history"), 0, 2);
         attitudeGrid.Controls.Add(_attitudeEditor, 1, 2);
 
-        var row = new FlowLayoutPanel { Dock = DockStyle.Fill };
-        row.Controls.Add(_attitudeSecret);
-        row.Controls.Add(_saveAttitude);
-        attitudeGrid.Controls.Add(row, 1, 3);
+        var attitudeActions = new FlowLayoutPanel { Dock = DockStyle.Fill };
+        attitudeActions.Controls.Add(_attitudeSecret);
+        attitudeActions.Controls.Add(_saveAttitude);
+        attitudeGrid.Controls.Add(attitudeActions, 1, 3);
         attitudeGroup.Controls.Add(attitudeGrid);
     }
 
