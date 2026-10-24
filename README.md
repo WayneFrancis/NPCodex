@@ -411,3 +411,49 @@ ORDER BY s.session_id, t.turn_id;
 ```
 
 **Limits:** Only the newest open session for a given campaign/NPC/player-character combination resumes automatically; closed sessions remain in the database but cannot yet be browsed in the UI. Only eight latest approved exchanges are sent to Qwen to bound context size; the entire approved transcript remains stored. Previously saved `interactions` aren't converted to session turns. This is still a DM-only prototype with no player authentication, and generated output must be reviewed before use. Database migrations are manual for now. Build/runtime verification must be performed on Windows.
+
+
+## Phase 7: NPC personality and directed relationships
+
+This step adds a DM-editable **Personality & Relationships** tab. It uses a new `npc_profiles` table plus the existing directed `character_relationships` table from the original schema.
+
+**One-time migration:** Pull the repository, then execute the whole [`database/migrations/0003_npc_profiles.sql`](database/migrations/0003_npc_profiles.sql) in DBeaver against `npcodex`. Do not execute the script more than once. It creates one table, records the migration version and leaves all existing conversations, characters and memories intact.
+
+```powershell
+cd D:\dev\NPCodex
+git pull --ff-only
+```
+
+Verify in DBeaver:
+
+```sql
+SELECT version FROM schema_migrations ORDER BY version;
+SELECT COUNT(*) AS public_tables
+FROM information_schema.tables
+WHERE table_schema = 'public' AND table_type = 'BASE TABLE';
+```
+
+Expected migration versions: `0001_initial_schema`, `0002_conversations`, `0003_npc_profiles`. Expected public base table count: **16**.
+
+Build and run:
+
+```powershell
+dotnet restore NPCodex.slnx
+dotnet build NPCodex.slnx
+dotnet run --project src/NPCodex.Desktop
+```
+
+### Try it with Mira and Rowan
+
+1. Select **Test Campaign** and **Mira Vale**.
+2. Open **Personality & Relationships**. Enter traits such as `Practical, observant, slow to trust strangers, honours agreements.` Under speaking style, try `Short, precise sentences, dry humour when comfortable.` Add manners and motivations if useful. Click **Save NPC personality**.
+3. The **Private DM notes** field is stored in PostgreSQL, but deliberately excluded from Qwen's prompt. Do not copy private secrets into the other profile fields if they must stay out of generated dialogue.
+4. Select **Rowan (example PC)** in the left sidebar. Set disposition to `35` and the opinion to `Rowan has kept a promise in the past, so I am cautiously welcoming.` **Only enter an established fact if the DM has decided it occurred**. Click **Save NPC opinion of player**.
+5. Return to Dialogue and ask Mira about buying another map. Generate three responses. All three should broadly reflect her stable persona; the Warm and Guarded alternatives should vary tone only slightly, not overturn her character traits. Compare her replies after changing the disposition and regenerating.
+6. Check **Private opinion — do not send to Qwen** to keep the entire recorded relationship out of dialogue context. This may make the replies less personalised, but avoids leaking that note.
+
+The relationship is directional: **Mira's opinion of Rowan is not Rowan's opinion of Mira**. It uses a `character_relationships` record with `relationship_type = 'attitude'` and a disposition range from −100 to +100. Other relationship types in that table are left unchanged.
+
+The `npc_profiles` columns `personality_traits`, `speaking_style`, `mannerisms`, and `motivations` are supplied to local Qwen3 alongside non-secret NPC memories. `private_dm_notes` is not. The NPC-specific selected PC's relationship is used only when that PC is selected; the existing command-line `npc-chat` test has no PC selection and therefore doesn't include a relationship opinion.
+
+This is still a **DM-only development application**. Free-text personality or relationship content can contain unintentional spoilers, and LLM output may diverge from the desired tone; review each suggestion before approving it. Personality fields are stored without embedding since they are loaded directly for each generation. Approved conversations and long-term NPC memories continue to behave as before. This revision has been committed but not yet compiled in the Windows environment.
