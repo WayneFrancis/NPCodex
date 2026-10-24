@@ -592,3 +592,107 @@ for you, Rowan`, not `I'm keeping it until Rowan returns`.
 Only freshly generated replies use the new prompt and revision pass.
 For controlled tests, end the previous conversation before regenerating;
 do not approve drafts that still misstate the campaign history.
+
+
+## Phase 8: NPC-to-NPC relationships and character aliases
+
+### One-time database migration
+
+First pull the latest GitHub commit:
+
+```powershell
+cd D:\dev\NPCodex
+git pull --ff-only
+```
+
+Use **DBeaver** to open and execute the entire
+`database/migrations/0004_character_aliases.sql` script **once** in your
+`npcodex` database (after migrations 0001, 0002 and 0003). It adds
+`character_aliases` and the schema migration marker; it does NOT change
+existing characters, memories, conversations or relationships.
+Afterward, check:
+
+```sql
+SELECT version FROM schema_migrations ORDER BY version;
+SELECT COUNT(*) FROM information_schema.tables
+ WHERE table_schema = 'public' AND table_type = 'BASE TABLE';
+```
+
+Expected: four migration versions and **17** public base tables
+(16 previous + 1 new). Don't rerun a successfully applied migration.
+
+```powershell
+dotnet build NPCodex.slnx
+dotnet run --project src/NPCodex.Desktop
+```
+
+### NPC relationships
+
+1. If your Test Campaign still has only Mira Vale as an NPC, click
+   **Add NPC** in the left sidebar. For example, create
+   `Darrin Reed`, occupation `Scout`.
+2. Select **Mira Vale** as the active NPC. In the
+   **Personality & Relationships** tab, choose **Darrin Reed (NPC)**
+   from the **Target character** dropdown.
+3. Set disposition to `-70`, enter `Mira thinks Darrin exaggerates his stories`,
+   leave **Private opinion** *unchecked*, and save.
+4. Go to **Dialogue**, select Rowan as the player character and ask:
+   `What do you think of Darrin Reed?` The line below Generate should
+   report `Referenced NPCs: Darrin Reed`, and Mira should reflect her
+   opinion while avoiding treating suspicion as fact.
+5. Switch to Darrin as the active NPC to record **Darrin's opinion of Mira**
+   separately. A relationship is *directional*; editing one side does not
+   update the other side.
+
+### Character Aliases
+
+The new **Character Aliases** tab lets the DM choose any existing NPC or PC,
+enter a nickname (for example `Red` for Darrin Reed), list saved aliases,
+and delete an alias. Names are limited to 120 characters. The application
+rejects aliases that match another character's canonical name or saved alias
+in the same campaign, ignoring letter case. Original characters may still
+have ambiguous duplicate canonical names; the dialogue name matcher
+**refuses to resolve ambiguous references** rather than guessing.
+
+Ask Mira `What do you think of Red?`: the same directed relationship to
+Darrin is retrieved when `Red` uniquely identifies Darrin. Aliases
+also help the selected player character be recognised in memories, such
+as the seeded `Rowan (example PC)` / `Rowan` pair. The demo-name
+compatibility rule is retained.
+
+Only a few relevant NPC-to-NPC relationships are passed to local Qwen:
+the other NPC must be **explicitly mentioned** in the player's current
+line by a unique canonical name or alias, the directed relationship must
+exist, and its private/secret flag must be **unchecked**. The relationship
+is treated as Mira's **subjective opinion**, not as an established fact.
+NPC-to-NPC relationships do not override the NPC's attitude toward the
+current speaker, which still requires selecting that PC.
+
+Aliases are assumed to be non-secret DM-approved names; do not enter
+aliases that must be kept out of AI dialogue. An alias is an alternative
+name for the *same character*, not a new NPC. Existing memory text is
+not rewritten and already approved dialogue remains untouched.
+
+To inspect aliases and relationships in DBeaver:
+
+```sql
+SELECT c.name AS character, a.alias
+FROM character_aliases a
+JOIN characters c ON c.campaign_id = a.campaign_id
+ AND c.character_id = a.character_id
+ORDER BY c.name, a.alias;
+
+SELECT source.name AS npc, target.name AS related_character,
+       r.disposition, r.description, r.is_secret
+FROM character_relationships r
+JOIN characters source ON source.campaign_id = r.campaign_id
+ AND source.character_id = r.source_character_id
+JOIN characters target ON target.campaign_id = r.campaign_id
+ AND target.character_id = r.target_character_id
+WHERE r.relationship_type = 'attitude'
+ORDER BY source.name, target.name;
+```
+
+This is a DM-only prototype. Changes are committed to GitHub, but still
+require verification by building on Windows and exercising the PostgreSQL
+migration; no automatic schema updater is installed.
