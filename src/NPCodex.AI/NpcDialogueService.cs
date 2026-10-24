@@ -155,6 +155,9 @@ public sealed class NpcDialogueService
             A stylistic variant must not reverse personality or opinion.
             When a directed attitude is provided, it is a key part of the
             character's current behaviour, NOT a minor flavour detail.
+            The current numeric disposition is authoritative for present tone
+            if an older free-text relationship description sounds inconsistent.
+            Preserve established events without inventing a reason for the change.
             Let the attitude noticeably govern word choice, warmth, trust,
             willingness to help and patience. Do not explicitly mention
             numeric scores or labels in the spoken reply.
