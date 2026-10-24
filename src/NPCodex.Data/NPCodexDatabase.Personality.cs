@@ -79,15 +79,15 @@ public sealed partial class NPCodexDatabase
     }
 
     /// <summary>
-    /// An NPC's disposition toward a particular player character. The reverse
+    /// An NPC's disposition toward another character. The reverse
     /// opinion is a separate record, and is never implicitly assumed.
     /// </summary>
     public async Task<NpcAttitude?> GetNpcAttitudeAsync(
-        long campaignId, long npcId, long targetPlayerId,
+        long campaignId, long npcId, long targetCharacterId,
         CancellationToken cancellationToken = default)
     {
         RequireCampaignId(campaignId);
-        if (npcId <= 0 || targetPlayerId <= 0 || npcId == targetPlayerId)
+        if (npcId <= 0 || targetCharacterId <= 0 || npcId == targetCharacterId)
             throw new ArgumentException("Select two different, valid characters.");
 
         const string sql = """
@@ -98,14 +98,14 @@ public sealed partial class NPCodexDatabase
                              AND n.character_type = 'npc'
             JOIN characters t ON t.campaign_id = r.campaign_id
                              AND t.character_id = r.target_character_id
-                             AND t.character_type = 'pc'
+                             AND t.character_type IN ('pc', 'npc')
             WHERE r.campaign_id = $1 AND r.source_character_id = $2
               AND r.target_character_id = $3 AND r.relationship_type = 'attitude'
             """;
         await using var cmd = _dataSource.CreateCommand(sql);
         cmd.Parameters.AddWithValue(campaignId);
         cmd.Parameters.AddWithValue(npcId);
-        cmd.Parameters.AddWithValue(targetPlayerId);
+        cmd.Parameters.AddWithValue(targetCharacterId);
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
         return await reader.ReadAsync(cancellationToken)
             ? new NpcAttitude(reader.GetInt64(0), reader.GetString(1),
@@ -115,12 +115,12 @@ public sealed partial class NPCodexDatabase
     }
 
     public async Task SaveNpcAttitudeAsync(
-        long campaignId, long npcId, long targetPlayerId,
+        long campaignId, long npcId, long targetCharacterId,
         short disposition, string description, bool isSecret,
         CancellationToken cancellationToken = default)
     {
         RequireCampaignId(campaignId);
-        if (npcId <= 0 || targetPlayerId <= 0 || npcId == targetPlayerId)
+        if (npcId <= 0 || targetCharacterId <= 0 || npcId == targetCharacterId)
             throw new ArgumentException("Select an NPC and a different player character.");
         if (disposition is < -100 or > 100)
             throw new ArgumentOutOfRangeException(nameof(disposition));
@@ -130,13 +130,13 @@ public sealed partial class NPCodexDatabase
             INSERT INTO character_relationships
                 (campaign_id, source_character_id, target_character_id,
                  relationship_type, disposition, description, is_secret)
-            SELECT $1, npc.character_id, pc.character_id,
+            SELECT $1, ntarget.character_id, target.character_id,
                    'attitude', $4, $5, $6
             FROM characters npc
-            JOIN characters pc ON pc.campaign_id = npc.campaign_id
+            JOIN characters target ON target.campaign_id = npc.campaign_id
             WHERE npc.campaign_id = $1 AND npc.character_id = $2
               AND npc.character_type = 'npc'
-              AND pc.character_id = $3 AND pc.character_type = 'pc'
+              AND target.character_id = $3 AND target.character_type IN ('npc', 'pc')
             ON CONFLICT (campaign_id, source_character_id, target_character_id,
                          relationship_type) DO UPDATE
             SET disposition = EXCLUDED.disposition,
@@ -146,12 +146,12 @@ public sealed partial class NPCodexDatabase
         await using var cmd = _dataSource.CreateCommand(sql);
         cmd.Parameters.AddWithValue(campaignId);
         cmd.Parameters.AddWithValue(npcId);
-        cmd.Parameters.AddWithValue(targetPlayerId);
+        cmd.Parameters.AddWithValue(targetCharacterId);
         cmd.Parameters.AddWithValue(disposition);
         cmd.Parameters.AddWithValue(description.Trim());
         cmd.Parameters.AddWithValue(isSecret);
         if (await cmd.ExecuteNonQueryAsync(cancellationToken) != 1)
-            throw new InvalidOperationException("NPC or player character missing from the selected campaign.");
+            throw new InvalidOperationException("NPC or target character missing from the selected campaign.");
     }
 
     private static void CheckLength(string text, int maximum, string name)
