@@ -315,3 +315,41 @@ Next: add an explicit **accept-and-record interaction** operation, so approved d
 2. Implement campaign- and character-scoped similarity retrieval for NPC memories.
 3. Implement DM-only versus player-safe access controls before involving an LLM.
 4. Add a desktop UI for managing NPCs and inspecting memory.
+
+## Phase 5: Windows Dungeon Master interface (WinForms)
+
+The first graphical frontend is in `src/NPCodex.Desktop`. It targets **.NET 10 for Windows** and uses the existing PostgreSQL data and local Ollama models. There is **no new database migration**.
+
+### Run
+
+In PowerShell:
+
+```powershell
+cd D:\dev\NPCodex
+git pull --ff-only
+dotnet restore NPCodex.slnx
+dotnet build NPCodex.slnx
+dotnet run --project src/NPCodex.Desktop
+```
+
+The application reuses the root `.env` password and defaults to Ollama at `http://localhost:11434/`. Docker Desktop, PostgreSQL and Ollama must be running. In Visual Studio you can open `NPCodex.slnx` and set `NPCodex.Desktop` as the startup project.
+
+### First UI workflow
+
+1. Select **Test Campaign** and **Mira Vale** on the left. Optionally select **Rowan** as the participating player character.
+2. Type a player's spoken line.
+3. Click **Generate 3 replies**. NPCodex makes one semantic memory retrieval and three Qwen3 chat requests. The three suggestions are **Natural**, **Warm**, and **Guarded**. They are editable. The **Manual reply** box works without the AI.
+4. Select and optionally edit a reply. Inspect the retrieved memory IDs and texts at the bottom.
+5. If the NPC should remember this exchange, check **Also save a memory**, then write or edit the memory. **Draft from dialogue** pre-fills an editable note about what was *said*, not any unconfirmed player action. Set importance 1–5 and optionally flag it Secret.
+6. Click **Approve and save interaction** and confirm. The app stores the exact player line and chosen reply in an interaction transcript. Only when requested does it create a separate NPC memory linked to the interaction.
+7. The **Memories** tab lists the selected NPC's stored memories (including secret ones, visible to the DM), and can create, edit, or delete memories. Saving modified text invalidates its old vector and attempts to embed the new text immediately. If Ollama is unavailable, the **database save still succeeds**, and the memory remains pending for the existing `embed-memories` command.
+
+### Current limitations
+
+- **DM only**, not a player-facing or authenticated multi-user app. The UI shows secret memories in the DM-only editor. Model output requires human review.
+- Saves approved dialogue as an interaction; it does not assume any player action occurred just because a candidate mentions it.
+- The three suggestions are generated sequentially; on local hardware this may take a while. The app keeps controls disabled while waiting.
+- Memory editing checks the previously loaded text to prevent overwriting a different edit, but this is not yet a full multi-user concurrency protocol.
+- No full-session chat log UI, autosave, streaming generation, or AI-generated memory extraction. Those are later enhancements.
+- The desktop project has been committed but has **not yet been compiled/tested on the user's Windows environment**.
+
