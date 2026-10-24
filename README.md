@@ -169,7 +169,86 @@ ORDER BY m.memory_id;
 
 The demo memory will have `embedded = false`. That is expected until we add Ollama embedding generation. The new `NPCodexDatabase.World.cs` also exposes APIs to create locations, characters and atomic NPC interactions from a future desktop UI.
 
-## Next implementation steps
+## Phase 3: Local Ollama embeddings and NPC memory retrieval
+
+The AI layer is in `src/NPCodex.AI`. It uses Ollama's local `POST /api/embed` endpoint with `nomic-embed-text` and the PostgreSQL `VECTOR(768)` fields already created by migration `0001_initial_schema`. No new migration is needed.
+
+The first implementation runs on demand, not as a background worker. It does not invoke Qwen chat or expose NPC content to an external AI service.
+
+1. Ensure your Ollama container is running, with host port `11434` available. For example, view containers using `docker ps`. If your container is named `ollama`, install the model:
+
+```powershell
+docker exec ollama ollama pull nomic-embed-text
+```
+
+If your container has a different name, substitute that name. This model is distinct from your existing `qwen3:8b` chat model.
+
+2. Pull, restore and build the new .NET projects:
+
+```powershell
+cd D:\\dev\\NPCodex
+git pull --ff-only
+dotnet restore NPCodex.slnx
+dotnet build NPCodex.slnx
+```
+
+3. Find your Test Campaign ID and Mira's character ID:
+
+```powershell
+dotnet run --project src/NPCodex.DevTools -- check
+dotnet run --project src/NPCodex.DevTools -- show-world 1
+```
+
+Replace `1` with the campaign ID displayed by `check`.
+
+4. Convert existing NPC memories into vectors:
+
+```powershell
+dotnet run --project src/NPCodex.DevTools -- embed-memories 1
+```
+
+The command processes up to 50 memories at a time. Rerun it for further batches. It is safe to rerun: vectors using the current model are skipped. Existing text memories are not modified. Ollama is asked **not to truncate** overlong text, so a memory that exceeds the model's context length will fail visibly rather than lose information. We will add chunking later.
+
+5. Search Mira's memories semantically:
+
+```powershell
+dotnet run --project src/NPCodex.DevTools -- search-memories 1 1 "Did someone ask me to hold a map?"
+```
+
+Replace the first `1` with the campaign ID and second `1` with **Mira's actual character ID** from `show-world`. Retrieval is restricted to the NPC and campaign. Cosine distance is shown (lower = more similar); small numbers of memories do not prove ranking quality yet.
+
+6. In DBeaver, confirm the model and embedding are stored:
+
+```sql
+SELECT c.name, m.memory_id, m.embedding_model,
+       vector_dims(m.embedding) AS dimensions,
+       m.content
+FROM memories m
+JOIN characters c
+  ON c.campaign_id = m.campaign_id AND c.character_id = m.owner_character_id
+WHERE m.campaign_id = 1
+ORDER BY m.memory_id;
+```
+
+### AI embedding details
+
+- Uses `search_document: ` when embedding stored memories and `search_query: ` when embedding questions, as recommended for this model family.
+- Uses the official `Pgvector` .NET package with the Npgsql type mapper.
+- Rejects vectors of the wrong length, nonfinite values, or zero length.
+- Does not mix vectors made with different model names during queries.
+- Writes a vector only when the memory's stored text still matches what was embedded.
+- `NPCODEX_OLLAMA_URL` can override the default `http://localhost:11434/` address.
+- Uses the existing `.env` PostgreSQL password reader; no password prompt.
+- `search-memories` is **DM-only** and can show `is_secret` memories. Implement explicit player-safe filters before using retrieved results in any player-facing AI response.
+
+### Next steps
+
+- Record a few more NPC interactions and verify that semantic ranking finds the relevant memories.
+- Introduce citation/source IDs and a DM review process for AI-generated memories.
+- Add retrieval of rulebook and lore chunks, applying document permissions.
+- Build the chat layer that gives Qwen3:8b only appropriate memories and campaign facts.
+
+## Earlier implementation steps
 
 1. Add Ollama `nomic-embed-text` integration and an embedding worker.
 2. Implement campaign- and character-scoped similarity retrieval for NPC memories.
