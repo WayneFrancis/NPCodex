@@ -546,7 +546,13 @@ public sealed partial class MainForm : Form
             approvedHistory: _approvedTurns,
             playerCharacterId: PlayerId);
         _latestOptions = choices;
-        _relationshipStatus.Text = choices.RelationshipStatus;
+        var fixedCount = choices.Options.Count(o => o.SpeakerWordingAdjusted);
+        var speakerWarnings = choices.Options.Count(o => o.NeedsSpeakerReview);
+        _relationshipStatus.Text = choices.RelationshipStatus +
+            (fixedCount > 0 ? $" Corrected speaker wording in {fixedCount} draft(s)." : "") +
+            (speakerWarnings > 0
+                ? $" CHECK SPEAKER REFERENCES in {speakerWarnings} draft(s) before approving."
+                : "");
         for (var i = 0; i < choices.Options.Count; i++)
         {
             _choiceTexts[i].Text = choices.Options[i].Text;
@@ -558,7 +564,12 @@ public sealed partial class MainForm : Form
 
         _status.Text =
             $"Generated {choices.Options.Count} suggestions with {choices.ModelName}. " +
-            choices.RelationshipStatus + " Nothing saved.";
+            (speakerWarnings > 0
+                ? $"{speakerWarnings} draft(s) may incorrectly refer to the selected PC in third person; review before approval. "
+                : fixedCount > 0
+                    ? $"Corrected third-person speaker references in {fixedCount} draft(s). "
+                    : "") +
+            "Nothing saved.";
     }
 
     private void SelectChoice(int selected)
