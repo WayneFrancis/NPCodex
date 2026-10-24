@@ -15,11 +15,13 @@ public sealed partial class MainForm
     private readonly TextBox _privateNotesEditor = CreateProfileEditor(4000);
     private readonly Button _saveProfile = new() { Text = "Save NPC personality", AutoSize = true };
 
-    private readonly Label _attitudeTarget = new()
+    private readonly ComboBox _attitudeTarget = new()
     {
-        AutoSize = true,
-        Text = "Select a player character from the left sidebar."
+        Dock = DockStyle.Fill,
+        DropDownStyle = ComboBoxStyle.DropDownList
     };
+    private bool _loadingRelationshipTargets;
+    private IReadOnlyList<CharacterInfo> _campaignCharacters = Array.Empty<CharacterInfo>();
     private readonly NumericUpDown _disposition = new()
     {
         Minimum = -100, Maximum = 100, Value = 0, Width = 92
@@ -32,7 +34,7 @@ public sealed partial class MainForm
     };
     private readonly Button _saveAttitude = new()
     {
-        Text = "Save NPC opinion of player",
+        Text = "Save NPC opinion of character",
         AutoSize = true
     };
 
@@ -92,7 +94,7 @@ public sealed partial class MainForm
 
         var attitudeGroup = new GroupBox
         {
-            Text = "Directed opinion of selected player character",
+            Text = "Directed opinion of selected character (NPC or PC)",
             Dock = DockStyle.Fill
         };
         sections.Controls.Add(attitudeGroup, 0, 1);
@@ -147,6 +149,11 @@ public sealed partial class MainForm
             await RunBusyAsync(SavePersonalityAsync);
         _saveAttitude.Click += async (_, _) =>
             await RunBusyAsync(SaveAttitudeAsync);
+        _attitudeTarget.SelectedIndexChanged += async (_, _) =>
+        {
+            if (!_loadingRelationshipTargets && !_busy)
+                await RunBusyAsync(LoadAttitudeAsync);
+        };
     }
 
     private async Task LoadPersonalityAsync()
@@ -167,7 +174,30 @@ public sealed partial class MainForm
             _privateNotesEditor.Text = profile.PrivateDmNotes;
         }
 
+        PopulateRelationshipTargets();
         await LoadAttitudeAsync();
+    }
+
+    /// <summary>Show every other character as a possible directed target.</summary>
+    private void PopulateRelationshipTargets(long? preferredId = null)
+    {
+        preferredId ??= PlayerId;
+        _loadingRelationshipTargets = true;
+        try
+        {
+            _attitudeTarget.Items.Clear();
+            foreach (var character in _campaignCharacters.Where(c => c.Id != NpcId))
+                _attitudeTarget.Items.Add(new CharacterChoice(
+                    character.Id, $"{character.Name} ({character.Type.ToUpperInvariant()})"));
+            _attitudeTarget.SelectedItem =
+                _attitudeTarget.Items.Cast<CharacterChoice>()
+                    .FirstOrDefault(c => c.Id == preferredId)
+                ?? _attitudeTarget.Items.Cast<CharacterChoice>().FirstOrDefault();
+        }
+        finally
+        {
+            _loadingRelationshipTargets = false;
+        }
     }
 
     private async Task LoadAttitudeAsync()
@@ -175,19 +205,15 @@ public sealed partial class MainForm
         _disposition.Value = 0;
         _attitudeEditor.Clear();
         _attitudeSecret.Checked = false;
-        _attitudeTarget.Text = "Select a player character from the left sidebar.";
-
         if (CampaignId is not long campaignId || NpcId is not long npcId ||
-            PlayerId is not long pcId)
+            (_attitudeTarget.SelectedItem as CharacterChoice)?.Id is not long targetId)
         {
             _saveAttitude.Enabled = false;
             return;
         }
 
-        var target = _playerCharacters.SelectedItem as CharacterChoice;
-        _attitudeTarget.Text = target?.Name ?? $"Character #{pcId}";
-
-        var attitude = await _database.GetNpcAttitudeAsync(campaignId, npcId, pcId);
+        var attitude = await _database.GetNpcAttitudeAsync(
+            campaignId, npcId, targetId);
         if (attitude is not null)
         {
             _disposition.Value = attitude.Disposition;
@@ -217,12 +243,12 @@ public sealed partial class MainForm
     private async Task SaveAttitudeAsync()
     {
         if (CampaignId is not long campaignId || NpcId is not long npcId ||
-            PlayerId is not long playerId)
+            (_attitudeTarget.SelectedItem as CharacterChoice)?.Id is not long targetId)
             throw new InvalidOperationException(
-                "Select an NPC and a player character to record an opinion.");
+                "Select an NPC and another character to record an opinion.");
 
         await _database.SaveNpcAttitudeAsync(
-            campaignId, npcId, playerId,
+            campaignId, npcId, targetId,
             (short)_disposition.Value, _attitudeEditor.Text, _attitudeSecret.Checked);
         ResetSuggestions();
         _status.Text = "NPC opinion saved. New dialogue uses it unless marked private.";
