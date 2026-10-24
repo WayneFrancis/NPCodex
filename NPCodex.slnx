@@ -2,4 +2,5 @@
   <Project Path="src/NPCodex.Data/NPCodex.Data.csproj" />
   <Project Path="src/NPCodex.AI/NPCodex.AI.csproj" />
   <Project Path="src/NPCodex.DevTools/NPCodex.DevTools.csproj" />
+  <Project Path="src/NPCodex.Desktop/NPCodex.Desktop.csproj" />
 </Solution>
