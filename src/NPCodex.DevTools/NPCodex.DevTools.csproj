@@ -7,5 +7,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../NPCodex.Data/NPCodex.Data.csproj" />
+    <ProjectReference Include="../NPCodex.AI/NPCodex.AI.csproj" />
   </ItemGroup>
 </Project>
