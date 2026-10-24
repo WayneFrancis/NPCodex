@@ -13,7 +13,9 @@ public sealed partial class NPCodexDatabase : IAsyncDisposable
     public NPCodexDatabase(string connectionString)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
-        _dataSource = NpgsqlDataSource.Create(connectionString);
+        var builder = new NpgsqlDataSourceBuilder(connectionString);
+        builder.UseVector();
+        _dataSource = builder.Build();
     }
 
     public async Task<DatabaseStatus> CheckAsync(CancellationToken cancellationToken = default)
