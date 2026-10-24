@@ -1,3 +1,5 @@
+using System.Drawing;
+using System.Windows.Forms;
 using NPCodex.AI;
 using NPCodex.Data;
 
@@ -82,7 +84,8 @@ public sealed class MainForm : Form
         Controls.Add(root);
         root.Controls.Add(_status, 0, 1);
 
-        var split = new SplitContainer { Dock = DockStyle.Fill, SplitterWidth = 6, SplitterDistance = 275 };
+        var split = new SplitContainer { Dock = DockStyle.Fill, SplitterWidth = 6,
+            Size = new Size(1300, 850), SplitterDistance = 275 };
         root.Controls.Add(split, 0, 0);
         split.Panel1MinSize = 230;
         split.Panel2MinSize = 740;
@@ -205,7 +208,7 @@ public sealed class MainForm : Form
     private void BuildMemoryTab()
     {
         var split = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Horizontal,
-            SplitterDistance = 240 };
+            Size = new Size(900, 700), SplitterDistance = 240 };
         _memoriesTab.Controls.Add(split);
         split.Panel1.Controls.Add(_memories);
 
@@ -247,6 +250,19 @@ public sealed class MainForm : Form
                 ResetDialogue();
                 await RunBusyAsync(LoadMemoriesAsync);
             }
+        };
+        _playerLine.TextChanged += (_, _) => { if (!_busy) ResetSuggestions(); };
+        for (var i = 0; i < _choiceChecks.Length; i++)
+        {
+            var index = i;
+            _choiceChecks[i].CheckedChanged += (_, _) =>
+            {
+                if (_choiceChecks[index].Checked) SelectChoice(index);
+            };
+        }
+        _manualChoice.CheckedChanged += (_, _) =>
+        {
+            if (_manualChoice.Checked) SelectChoice(-1);
         };
         _generate.Click += async (_, _) => await RunBusyAsync(GenerateAsync);
         _approve.Click += async (_, _) => await RunBusyAsync(ApproveAsync);
@@ -418,6 +434,15 @@ public sealed class MainForm : Form
         _status.Text = $"Generated {choices.Options.Count} suggestions with {choices.ModelName}. Nothing saved.";
     }
 
+    private void SelectChoice(int selected)
+    {
+        for (var i = 0; i < _choiceChecks.Length; i++)
+        {
+            if (i != selected) _choiceChecks[i].Checked = false;
+        }
+        if (selected >= 0) _manualChoice.Checked = false;
+    }
+
     private string SelectedResponse()
     {
         if (_manualChoice.Checked)
@@ -517,11 +542,13 @@ public sealed class MainForm : Form
         _busy = true;
         _generate.Enabled = _approve.Enabled = _saveMemory.Enabled =
             _deleteMemory.Enabled = _campaigns.Enabled = _npcs.Enabled = false;
+        _playerLine.Enabled = _manualReply.Enabled = _newMemory.Enabled =
+            _memoryEditor.Enabled = _memories.Enabled = _playerCharacters.Enabled = false;
         UseWaitCursor = true;
         try { await operation(); }
         catch (Exception ex)
         {
-            _status.Text = "Operation failed. No unapproved dialogue was saved.";
+            _status.Text = "Operation failed. Check database state before retrying a save.";
             MessageBox.Show(ex.Message, "NPCodex", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
         finally
@@ -530,6 +557,8 @@ public sealed class MainForm : Form
             _busy = false;
             _generate.Enabled = _approve.Enabled = _saveMemory.Enabled =
                 _deleteMemory.Enabled = _campaigns.Enabled = _npcs.Enabled = true;
+            _playerLine.Enabled = _manualReply.Enabled = _newMemory.Enabled =
+                _memoryEditor.Enabled = _memories.Enabled = _playerCharacters.Enabled = true;
         }
     }
 
