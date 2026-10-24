@@ -1,3 +1,4 @@
+using NPCodex.AI;
 using NPCodex.Data;
 using Npgsql;
 
@@ -13,7 +14,11 @@ var validArgs = verb switch
 {
     "check" => args.Length <= 1,
     "create-campaign" => args.Length == 2 && !string.IsNullOrWhiteSpace(args[1]),
-    "seed-demo" or "show-world" => args.Length == 2 && IsPositiveId(args[1]),
+    "seed-demo" or "show-world" or "embed-memories" =>
+        args.Length == 2 && IsPositiveId(args[1]),
+    "search-memories" => args.Length == 4 &&
+        IsPositiveId(args[1]) && IsPositiveId(args[2]) &&
+        !string.IsNullOrWhiteSpace(args[3]),
     _ => false
 };
 
@@ -71,6 +76,39 @@ try
         case "show-world":
             await PrintWorldAsync(db, long.Parse(args[1]));
             break;
+        case "embed-memories":
+        {
+            var campaignId = long.Parse(args[1]);
+            using var ollama = new OllamaEmbeddingClient();
+            var service = new NpcMemoryService(db, ollama);
+            var result = await service.EmbedPendingAsync(campaignId);
+            Console.WriteLine(
+                $"Memories requiring embeddings: {result.Found}; stored: {result.Stored}; skipped: {result.Skipped}.");
+            Console.WriteLine(
+                $"Embedding model: {OllamaEmbeddingClient.ModelName} ({OllamaEmbeddingClient.Dimensions} dimensions).");
+            break;
+        }
+        case "search-memories":
+        {
+            var campaignId = long.Parse(args[1]);
+            var npcId = long.Parse(args[2]);
+            var query = args[3];
+            using var ollama = new OllamaEmbeddingClient();
+            var service = new NpcMemoryService(db, ollama);
+            var matches = await service.SearchAsync(campaignId, npcId, query);
+            Console.WriteLine($"Semantic memory matches for NPC {npcId} (campaign {campaignId}):");
+            if (matches.Count == 0)
+                Console.WriteLine("  No embedded memories for this NPC and model. Run embed-memories first.");
+            foreach (var memory in matches)
+            {
+                Console.WriteLine(
+                    $"  Memory {memory.Id}: cosine distance={memory.CosineDistance:F4}, importance={memory.Importance}" +
+                    (memory.IsSecret ? " [DM SECRET]" : ""));
+                Console.WriteLine($"    {memory.Content}");
+            }
+            Console.WriteLine("DM-only search; results are NOT suitable for display to players.");
+            break;
+        }
         default:
             await PrintCampaignsAsync(db);
             break;
@@ -137,6 +175,8 @@ static void ShowUsage()
     Console.WriteLine("  dotnet run --project src/NPCodex.DevTools -- create-campaign \"My Campaign\"");
     Console.WriteLine("  dotnet run --project src/NPCodex.DevTools -- seed-demo <campaign-id>");
     Console.WriteLine("  dotnet run --project src/NPCodex.DevTools -- show-world <campaign-id>");
+    Console.WriteLine("  dotnet run --project src/NPCodex.DevTools -- embed-memories <campaign-id>");
+    Console.WriteLine("  dotnet run --project src/NPCodex.DevTools -- search-memories <campaign-id> <npc-id> \"your question\"");
     Console.WriteLine();
     Console.WriteLine("Connection: localhost:5432, database/user npcodex.");
     Console.WriteLine("Password: NPCodex root .env file (or NPCODEX_DB_PASSWORD override).");
