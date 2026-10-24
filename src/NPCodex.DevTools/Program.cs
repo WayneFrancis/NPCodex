@@ -50,6 +50,9 @@ try
     var personalityInstalled = conversationsInstalled && await db.HasPersonalitySchemaAsync();
     Console.WriteLine($"Personality migration: {(personalityInstalled ? "installed" : "NOT installed")}");
 
+    var aliasesInstalled = personalityInstalled && await db.HasCharacterAliasSchemaAsync();
+    Console.WriteLine($"Character alias migration: {(aliasesInstalled ? "installed" : "NOT installed")}");
+
     if (!status.InitialMigrationInstalled || status.PgvectorVersion == "not installed")
     {
         Console.Error.WriteLine(
