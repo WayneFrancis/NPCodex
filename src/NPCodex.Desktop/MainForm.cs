@@ -28,6 +28,7 @@ public sealed class MainForm : Form
     private readonly RadioButton _manualChoice = new() { Text = "Use my manually written response", AutoSize = true };
     private readonly TextBox _manualReply = new() { Multiline = true, Dock = DockStyle.Fill, ScrollBars = ScrollBars.Vertical };
     private readonly CheckBox _createMemoryOnApproval = new() { Text = "Also save a memory for this NPC", AutoSize = true };
+    private readonly Button _draftMemoryButton = new() { Text = "Draft from dialogue", AutoSize = true };
     private readonly TextBox _newMemory = new() { Multiline = true, Dock = DockStyle.Fill, ScrollBars = ScrollBars.Vertical };
     private readonly NumericUpDown _newMemoryImportance = new() { Minimum = 1, Maximum = 5, Value = 3, Width = 48 };
     private readonly CheckBox _newMemorySecret = new() { Text = "Secret", AutoSize = true };
@@ -183,6 +184,7 @@ public sealed class MainForm : Form
         memoryLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         var settings = new FlowLayoutPanel { Dock = DockStyle.Fill };
         settings.Controls.Add(_createMemoryOnApproval);
+        settings.Controls.Add(_draftMemoryButton);
         settings.Controls.Add(new Label { Text = "Importance:", AutoSize = true,
             Padding = new Padding(12, 5, 0, 0) });
         settings.Controls.Add(_newMemoryImportance);
@@ -264,6 +266,7 @@ public sealed class MainForm : Form
         {
             if (_manualChoice.Checked) SelectChoice(-1);
         };
+        _draftMemoryButton.Click += (_, _) => DraftMemoryFromDialogue();
         _generate.Click += async (_, _) => await RunBusyAsync(GenerateAsync);
         _approve.Click += async (_, _) => await RunBusyAsync(ApproveAsync);
         _memories.SelectedIndexChanged += (_, _) => SelectMemory();
@@ -453,6 +456,29 @@ public sealed class MainForm : Form
                 return _choiceTexts[i].Text.Trim();
         }
         return "";
+    }
+
+    private void DraftMemoryFromDialogue()
+    {
+        var player = _playerLine.Text.Trim();
+        var reply = SelectedResponse();
+        if (string.IsNullOrWhiteSpace(player) || string.IsNullOrWhiteSpace(reply))
+        {
+            MessageBox.Show("Enter player dialogue and choose an NPC reply first.",
+                "Draft memory", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(_newMemory.Text) &&
+            MessageBox.Show("Replace the existing memory draft?", "Draft memory",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+            return;
+
+        // This describes speech only. It NEVER assumes an action (payment,
+        // promises kept, gifts transferred, etc.) that the DM didn't confirm.
+        _newMemory.Text = $"Someone said to me: \"{player}\". I answered: \"{reply}\".";
+        _createMemoryOnApproval.Checked = true;
+        _status.Text = "Memory drafted from dialogue. Edit it before approving; no data saved.";
     }
 
     private async Task ApproveAsync()
