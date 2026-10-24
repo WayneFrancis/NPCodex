@@ -121,7 +121,7 @@ public sealed partial class NPCodexDatabase
     {
         RequireCampaignId(campaignId);
         if (npcId <= 0 || targetCharacterId <= 0 || npcId == targetCharacterId)
-            throw new ArgumentException("Select an NPC and a different player character.");
+            throw new ArgumentException("Select an NPC and a different character.");
         if (disposition is < -100 or > 100)
             throw new ArgumentOutOfRangeException(nameof(disposition));
         CheckLength(description, 1200, nameof(description));
@@ -130,7 +130,7 @@ public sealed partial class NPCodexDatabase
             INSERT INTO character_relationships
                 (campaign_id, source_character_id, target_character_id,
                  relationship_type, disposition, description, is_secret)
-            SELECT $1, ntarget.character_id, target.character_id,
+            SELECT $1, npc.character_id, target.character_id,
                    'attitude', $4, $5, $6
             FROM characters npc
             JOIN characters target ON target.campaign_id = npc.campaign_id
