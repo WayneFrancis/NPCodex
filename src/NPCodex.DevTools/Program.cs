@@ -1,4 +1,3 @@
-using System.Text;
 using NPCodex.Data;
 using Npgsql;
 
@@ -27,19 +26,8 @@ if (!validArgs)
 
 try
 {
-    // Environment variable is optional; otherwise prompt without echoing the password.
-    var password = Environment.GetEnvironmentVariable("NPCODEX_DB_PASSWORD")
-        ?? ReadPassword();
-
-    var connectionString = new NpgsqlConnectionStringBuilder
-    {
-        Host = "localhost",
-        Port = 5432,
-        Database = "npcodex",
-        Username = "npcodex",
-        Password = password,
-        Timeout = 5
-    }.ConnectionString;
+    // Shared with future NPCodex desktop/services projects. Does not print secrets.
+    var connectionString = NPCodexConnectionSettings.CreateLocalConnectionString();
 
     await using var db = new NPCodexDatabase(connectionString);
     var status = await db.CheckAsync();
@@ -151,31 +139,6 @@ static void ShowUsage()
     Console.WriteLine("  dotnet run --project src/NPCodex.DevTools -- show-world <campaign-id>");
     Console.WriteLine();
     Console.WriteLine("Connection: localhost:5432, database/user npcodex.");
-    Console.WriteLine("Password: hidden interactive prompt (or NPCODEX_DB_PASSWORD).");
+    Console.WriteLine("Password: NPCodex root .env file (or NPCODEX_DB_PASSWORD override).");
     Console.WriteLine("seed-demo only adds fictional example data, and refuses to repeat for the same campaign.");
-}
-
-static string ReadPassword()
-{
-    if (Console.IsInputRedirected)
-        throw new InvalidOperationException(
-            "For noninteractive runs, set NPCODEX_DB_PASSWORD in the environment.");
-
-    Console.Write("PostgreSQL password: ");
-    var value = new StringBuilder();
-
-    while (true)
-    {
-        var key = Console.ReadKey(intercept: true);
-        if (key.Key == ConsoleKey.Enter)
-        {
-            Console.WriteLine();
-            return value.ToString();
-        }
-
-        if (key.Key == ConsoleKey.Backspace && value.Length > 0)
-            value.Length--;
-        else if (!char.IsControl(key.KeyChar) && key.Key != ConsoleKey.Backspace)
-            value.Append(key.KeyChar);
-    }
 }
