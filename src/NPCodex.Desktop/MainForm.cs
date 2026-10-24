@@ -22,6 +22,14 @@ public sealed partial class MainForm : Form
     private readonly ComboBox _playerCharacters = new() { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly TextBox _playerLine = new() { Multiline = true, Dock = DockStyle.Fill, ScrollBars = ScrollBars.Vertical };
     private readonly Button _generate = new() { Text = "Generate 3 replies", AutoSize = true };
+    private readonly Label _relationshipStatus = new()
+    {
+        Dock = DockStyle.Fill,
+        AutoEllipsis = true,
+        Text = "Attitude: not evaluated. Select a player character and generate replies.",
+        ForeColor = Color.DarkSlateBlue,
+        TextAlign = ContentAlignment.MiddleLeft
+    };
     private readonly Button _approve = new() { Text = "Approve and save interaction", AutoSize = true };
     private readonly RadioButton[] _choiceChecks = new RadioButton[3];
     private readonly TextBox[] _choiceTexts = new TextBox[3];
@@ -138,7 +146,7 @@ public sealed partial class MainForm : Form
         };
         conversation.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
         conversation.RowStyles.Add(new RowStyle(SizeType.Absolute, 102));
-        conversation.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
+        conversation.RowStyles.Add(new RowStyle(SizeType.Absolute, 72));
         conversation.RowStyles.Add(new RowStyle(SizeType.Absolute, 244));
         conversation.RowStyles.Add(new RowStyle(SizeType.Absolute, 105));
         conversation.RowStyles.Add(new RowStyle(SizeType.Absolute, 142));
@@ -156,10 +164,19 @@ public sealed partial class MainForm : Form
         playerGroup.Controls.Add(_playerLine);
         conversation.Controls.Add(playerGroup, 0, 1);
 
-        var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight };
-        actions.Controls.Add(_generate);
-        actions.Controls.Add(new Label { Text = "Suggestions are drafts, not campaign facts.",
-            AutoSize = true, Padding = new Padding(8, 9, 0, 0) });
+        var actions = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
+        actions.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
+        actions.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        var generateRow = new FlowLayoutPanel { Dock = DockStyle.Fill };
+        generateRow.Controls.Add(_generate);
+        generateRow.Controls.Add(new Label
+        {
+            Text = "DM-only drafts — nothing is saved until approved.",
+            AutoSize = true,
+            Padding = new Padding(8, 9, 0, 0)
+        });
+        actions.Controls.Add(generateRow, 0, 0);
+        actions.Controls.Add(_relationshipStatus, 0, 1);
         conversation.Controls.Add(actions, 0, 2);
 
         var choices = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1 };
@@ -529,6 +546,7 @@ public sealed partial class MainForm : Form
             approvedHistory: _approvedTurns,
             playerCharacterId: PlayerId);
         _latestOptions = choices;
+        _relationshipStatus.Text = choices.RelationshipStatus;
         for (var i = 0; i < choices.Options.Count; i++)
         {
             _choiceTexts[i].Text = choices.Options[i].Text;
@@ -538,7 +556,9 @@ public sealed partial class MainForm : Form
         foreach (var source in choices.RetrievedMemories)
             _sources.Items.Add($"Memory #{source.Id}  distance {source.CosineDistance:F3}: {source.Content}");
 
-        _status.Text = $"Generated {choices.Options.Count} suggestions with {choices.ModelName}. Nothing saved.";
+        _status.Text =
+            $"Generated {choices.Options.Count} suggestions with {choices.ModelName}. " +
+            choices.RelationshipStatus + " Nothing saved.";
     }
 
     private void SelectChoice(int selected)
@@ -658,6 +678,8 @@ public sealed partial class MainForm : Form
     private void ResetSuggestions()
     {
         _latestOptions = null;
+        _relationshipStatus.Text =
+            "Attitude: not evaluated. Select a player character and generate replies.";
         _sources.Items.Clear();
         for (var i = 0; i < _choiceTexts.Length; i++)
         {
