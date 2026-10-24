@@ -43,6 +43,10 @@ try
     Console.WriteLine(
         $"Initial migration: {(status.InitialMigrationInstalled ? "installed" : "NOT installed")}");
 
+    var conversationsInstalled = status.InitialMigrationInstalled
+        && await db.HasConversationSchemaAsync();
+    Console.WriteLine($"Conversation migration: {(conversationsInstalled ? "installed" : "NOT installed")}");
+
     if (!status.InitialMigrationInstalled || status.PgvectorVersion == "not installed")
     {
         Console.Error.WriteLine(
