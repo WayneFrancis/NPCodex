@@ -130,9 +130,8 @@ public sealed class NpcDialogueService
                 DispositionBehavior(attitude.Disposition);
         }
 
-        relationshipStatus = speakerName is null
-            ? "No player character selected. " + relationshipStatus
-            : $"Speaking to {speakerName}. " + relationshipStatus;
+        if (speakerName is not null)
+            relationshipStatus = $"Speaking to {speakerName}. " + relationshipStatus;
 
         // No private DM notes, biographies or secret-marked memories included.
         var context = JsonSerializer.Serialize(new
