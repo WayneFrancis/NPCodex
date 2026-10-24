@@ -250,7 +250,7 @@ public sealed class MainForm : Form
             if (!_ignoreSelectionEvents && !_busy)
             {
                 ResetDialogue();
-                await RunBusyAsync(LoadMemoriesAsync);
+                await RunBusyAsync(() => LoadMemoriesAsync());
             }
         };
         _playerLine.TextChanged += (_, _) => { if (!_busy) ResetSuggestions(); };
