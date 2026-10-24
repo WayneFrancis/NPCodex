@@ -558,3 +558,37 @@ Old approved dialogue mentioning Rowan in third person would otherwise still
 be passed as short-term conversation history. No records are altered by
 this prompt fix. Do not approve a suggested response that still contradicts
 established campaign facts.
+
+
+### Phase 7 follow-up: speaker aliases and reply perspective verification
+
+When the seeded player character is selected, NPCodex now recognises both
+`Rowan (example PC)` (the database display name) and `Rowan`
+(the name used by existing memories) as the **same current speaker**.
+This mapping is specific to the seeded ` (example PC)` suffix; the app
+does not automatically assume that arbitrary short names are unique aliases.
+
+Generated candidate replies are checked for obvious third-person references
+to the current speaker, such as `until Rowan returns`,
+`Rowan promised`, or `Rowan's map`. Affected candidates receive one
+additional local Ollama request to **revise wording only**, preserving tone,
+established facts and prices. A successful revision is shown as the draft;
+an unresolved or failed revision leaves the original draft editable but
+shows a prominent **CHECK SPEAKER REFERENCES** warning. This is a heuristic
+review aid, not a guarantee of factual correctness or perfect pronouns.
+
+No new database migration is required. Update and build:
+
+```powershell
+cd D:\dev\NPCodex
+git pull --ff-only
+dotnet build NPCodex.slnx
+dotnet run --project src/NPCodex.Desktop
+```
+
+Select Mira and Rowan. Set disposition to `+100` and ask about a map.
+A valid friendly reply should say something like `I've kept your map
+for you, Rowan`, not `I'm keeping it until Rowan returns`.
+Only freshly generated replies use the new prompt and revision pass.
+For controlled tests, end the previous conversation before regenerating;
+do not approve drafts that still misstate the campaign history.
