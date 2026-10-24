@@ -41,6 +41,21 @@ public sealed class NpcMemoryService
         return new EmbeddingSyncResult(pending.Count, stored, skipped);
     }
 
+    /// <summary>Embeds one newly saved or edited memory; no-op if current.</summary>
+    public async Task<bool> EmbedMemoryAsync(
+        long campaignId, long memoryId, CancellationToken cancellationToken = default)
+    {
+        var memory = await _database.GetMemoryToEmbedAsync(
+            campaignId, memoryId, OllamaEmbeddingClient.ModelName, cancellationToken);
+        if (memory is null)
+            return false;
+
+        var vector = await _ollama.EmbedDocumentAsync(memory.Content, cancellationToken);
+        return await _database.SaveMemoryEmbeddingAsync(
+            campaignId, memory.Id, memory.Content,
+            OllamaEmbeddingClient.ModelName, vector, cancellationToken);
+    }
+
     /// <summary>
     /// Retrieves a specific NPC's embedded memories within the given campaign.
     /// Returns a DM-facing result; caller must not expose secret memories to players.
