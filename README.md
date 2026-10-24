@@ -353,3 +353,61 @@ The application reuses the root `.env` password and defaults to Ollama at `http:
 - No full-session chat log UI, autosave, streaming generation, or AI-generated memory extraction. Those are later enhancements.
 - The desktop project has been committed but has **not yet been compiled/tested on the user's Windows environment**.
 
+
+
+## Phase 6: Resumable multi-turn conversations
+
+**Database migration required.** First pull the repository:
+
+```powershell
+cd D:\dev\NPCodex
+git pull --ff-only
+```
+
+In DBeaver open `database/migrations/0002_conversations.sql` against the **npcodex** database, then execute the **entire SQL script once**. It adds `conversation_sessions` and `conversation_turns`, and registers `0002_conversations` in `schema_migrations`. It does not delete or change any earlier campaigns, memories or interactions. Approved interactions created *before* this migration remain in `interactions` but are not automatically assigned to the new sessions.
+
+Verify:
+
+```sql
+SELECT version, applied_at FROM schema_migrations ORDER BY version;
+SELECT table_name FROM information_schema.tables
+ WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+ ORDER BY table_name;
+```
+
+You should see both migration versions, and **15 public tables** (13 earlier + 2 new). Do not rerun the migration once installed.
+
+Then build and launch:
+
+```powershell
+dotnet restore NPCodex.slnx
+dotnet build NPCodex.slnx
+dotnet run --project src/NPCodex.Desktop
+```
+
+### Try a two-turn conversation with Mira
+
+1. Choose your **Test Campaign**, **Mira Vale**, and optionally **Rowan** as the player character. Each different NPC/player pairing has its own conversation.
+2. Ask, "I've heard the northern ruins are haunted. What do you think?" Generate three replies. Choose and edit one, then **Approve and save interaction**. You may leave the long-term memory checkbox **unchecked**.
+3. The approved player line and NPC reply appear in the **Approved conversation history** tab at the bottom of the Dialogue page. This is short-term context, *not* a permanent NPC `memories` record.
+4. Ask, "And why did you say that?" Generate new replies. Qwen receives the last **8 approved turns** as proper user/assistant chat messages, in addition to relevant long-term memories from pgvector.
+5. Close and reopen NPCodex. Choose the same campaign, NPC and optional PC. It automatically resumes the newest open conversation for that pairing, with its approved history.
+6. Click **End conversation / start new** to close that session. Its audit/history records remain in PostgreSQL, but the next approved reply starts a new conversation with fresh short-term context.
+
+**DM approval rule:** Only responses you explicitly approve join session history. Generating three candidates, changing a draft, or leaving a conversation unsaved does not update either `conversation_turns` or `memories`. Only choosing the optional **Also save a memory** creates a long-term NPC memory and queues its embedding.
+
+To inspect saved turns in DBeaver:
+
+```sql
+SELECT s.session_id, c.name AS npc, s.started_at, s.ended_at,
+       t.turn_id, t.player_line, t.npc_reply, t.approved_at
+FROM conversation_sessions s
+JOIN characters c
+  ON c.campaign_id = s.campaign_id AND c.character_id = s.npc_id
+JOIN conversation_turns t
+  ON t.campaign_id = s.campaign_id AND t.session_id = s.session_id
+WHERE c.name = 'Mira Vale'
+ORDER BY s.session_id, t.turn_id;
+```
+
+**Limits:** Only the newest open session for a given campaign/NPC/player-character combination resumes automatically; closed sessions remain in the database but cannot yet be browsed in the UI. Only eight latest approved exchanges are sent to Qwen to bound context size; the entire approved transcript remains stored. Previously saved `interactions` aren't converted to session turns. This is still a DM-only prototype with no player authentication, and generated output must be reviewed before use. Database migrations are manual for now. Build/runtime verification must be performed on Windows.
