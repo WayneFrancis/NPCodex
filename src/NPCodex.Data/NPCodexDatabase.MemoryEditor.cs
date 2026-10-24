@@ -163,9 +163,12 @@ public sealed partial class NPCodexDatabase
         long campaignId, long npcId, long? playerCharacterId,
         string playerLine, string approvedNpcReply, string? memoryText = null,
         short importance = 3, bool memorySecret = false,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        long? conversationId = null)
     {
         RequireCampaignId(campaignId);
+        if (conversationId is <= 0)
+            throw new ArgumentOutOfRangeException(nameof(conversationId));
         if (npcId <= 0 || playerCharacterId is <= 0 || playerCharacterId == npcId)
             throw new ArgumentException("Invalid or duplicate participant ID.");
         RequireText(playerLine, nameof(playerLine));
@@ -202,6 +205,33 @@ public sealed partial class NPCodexDatabase
                 throw new InvalidOperationException("Player character not found in the selected campaign.");
         }
 
+        // Either resume a validated open session (locked to serialize turns),
+        // or start one with the first DM-approved exchange.
+        long sessionId;
+        if (conversationId is long selectedSession)
+        {
+            await using var sessionCmd = BuildCommand("""
+                SELECT session_id FROM conversation_sessions
+                WHERE campaign_id = $1 AND session_id = $2 AND npc_id = $3
+                  AND player_character_id IS NOT DISTINCT FROM $4::bigint
+                  AND ended_at IS NULL
+                FOR UPDATE
+                """, connection, transaction,
+                campaignId, selectedSession, npcId, playerCharacterId);
+            if (await sessionCmd.ExecuteScalarAsync(cancellationToken) is not long foundId)
+                throw new InvalidOperationException(
+                    "Conversation changed or ended. Reload the current session.");
+            sessionId = foundId;
+        }
+        else
+        {
+            sessionId = await InsertIdAsync("""
+                INSERT INTO conversation_sessions (campaign_id, npc_id, player_character_id)
+                VALUES ($1, $2, $3) RETURNING session_id
+                """, connection, transaction, cancellationToken,
+                campaignId, npcId, playerCharacterId);
+        }
+
         // Plain-text transcript. Escape/encode when displaying in rich-text/html UIs.
         var transcript = $"Player: {playerLine.Trim()}\n{npcName}: {approvedNpcReply.Trim()}";
         var interactionId = await InsertIdAsync("""
@@ -222,6 +252,15 @@ public sealed partial class NPCodexDatabase
                 VALUES ($1, $2, $3)
                 """, connection, transaction, cancellationToken, campaignId, interactionId, pc);
 
+        // Approved short-term conversational context. A separate long-term NPC
+        // memory is only created when the DM supplies memoryText below.
+        await ExecuteSqlAsync("""
+            INSERT INTO conversation_turns
+                (campaign_id, session_id, interaction_id, player_line, npc_reply)
+            VALUES ($1, $2, $3, $4, $5)
+            """, connection, transaction, cancellationToken,
+            campaignId, sessionId, interactionId, playerLine.Trim(), approvedNpcReply.Trim());
+
         long? memoryId = null;
         if (memoryText is not null)
             memoryId = await InsertIdAsync("""
@@ -234,6 +273,6 @@ public sealed partial class NPCodexDatabase
                 campaignId, npcId, interactionId, memoryText, importance, memorySecret);
 
         await transaction.CommitAsync(cancellationToken);
-        return new ApprovedDialogue(interactionId, memoryId);
+        return new ApprovedDialogue(interactionId, memoryId, sessionId);
     }
 }
