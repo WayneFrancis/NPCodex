@@ -248,6 +248,67 @@ ORDER BY m.memory_id;
 - Add retrieval of rulebook and lore chunks, applying document permissions.
 - Build the chat layer that gives Qwen3:8b only appropriate memories and campaign facts.
 
+## Phase 4: Qwen3 NPC dialogue preview
+
+The new `npc-chat` command combines PostgreSQL facts and non-secret pgvector memories with your local `qwen3:8b` model. No database migration is required.
+
+### Try it
+
+Make sure the existing Ollama container is running and both models are installed:
+
+```powershell
+docker ps
+docker exec ollama ollama list
+```
+
+If the Qwen3 model is missing: `docker exec ollama ollama pull qwen3:8b`. Replace `ollama` with the actual container name as needed.
+
+Update your checkout and build:
+
+```powershell
+cd D:\dev\NPCodex
+git pull --ff-only
+dotnet restore NPCodex.slnx
+dotnet build NPCodex.slnx
+```
+
+Find the campaign and Mira's actual NPC ID:
+
+```powershell
+dotnet run --project src/NPCodex.DevTools -- check
+dotnet run --project src/NPCodex.DevTools -- show-world 1
+```
+
+Replace the campaign ID in `show-world` if needed. Embed any newly added memories:
+
+```powershell
+dotnet run --project src/NPCodex.DevTools -- embed-memories 1
+```
+
+Ask Mira about the map:
+
+```powershell
+dotnet run --project src/NPCodex.DevTools -- npc-chat 1 1 "Hello Mira, do you still have that map you promised me?"
+```
+
+The first `1` is the campaign ID. **The second `1` is Mira's NPC ID**; use her actual character ID from `show-world`. The result prints the NPC reply and the retrieved memory IDs with cosine distances.
+
+### Current behaviour and limits
+
+- Confirms the requested NPC belongs to the requested campaign.
+- Sends only name, occupation, location, and location roles to the chat model. Excludes `dm_notes`, biography, and location descriptions.
+- Searches up to five memories for that NPC and campaign; those explicitly marked `is_secret` are filtered out.
+- Uses `nomic-embed-text` to embed the player's question, then `qwen3:8b` to write the response.
+- Requests `think: false`, `stream: false` on the local Ollama `POST /api/chat` endpoint.
+- Doesn't modify records or automatically save conversation text. The result is a **DM-only preview**.
+
+**Not yet player-safe:** Although secret-marked memories are excluded, free-text data and generated output may still contain spoilers, fabrication or undesired content. A DM must approve the reply before showing it to players. Retrieved memories are context candidates, not proof that the model actually used each one.
+
+The chat model defaults to `qwen3:8b`, and can be overridden using the `NPCODEX_CHAT_MODEL` environment variable. The Ollama address still defaults to `http://localhost:11434/` and can be changed with `NPCODEX_OLLAMA_URL`. PostgreSQL credentials still come from your local `.env` file.
+
+Next: add an explicit **accept-and-record interaction** operation, so approved dialogue and resulting NPC memories are saved, and new memories are then embedded.
+
+
 ## Earlier implementation steps
 
 1. Add Ollama `nomic-embed-text` integration and an embedding worker.
