@@ -523,3 +523,38 @@ WHERE npc.name = 'Mira Vale'
 NPCodex still provides **draft replies only**; DM approval is mandatory,
 and local Qwen3 output is probabilistic, so behavioural instructions improve
 consistency but cannot guarantee exact phrasing.
+
+
+### Phase 7 follow-up: speak directly to the selected PC
+
+An NPC memory is often written in third person (for example, "Rowan promised
+to return with two gold pieces"). When **Rowan is the selected current player
+character**, Mira must address Rowan directly: "You asked me to keep this map."
+She should not discuss Rowan as an absent third party.
+
+The dialogue service now resolves the selected PC's name **independently of
+the relationship table** and provides it to Qwen as the current speaker. It
+also instructs Qwen not to contradict stored facts or invent a broken promise
+merely because a promise to pay exists. Disposition should alter the NPC's
+tone, not rewrite known history.
+
+No migration is needed. Update and launch:
+
+```powershell
+cd D:\dev\NPCodex
+git pull --ff-only
+dotnet build NPCodex.slnx
+dotnet run --project src/NPCodex.Desktop
+```
+
+Select both **Mira Vale** and **Rowan (example PC)** from the left sidebar.
+After generating replies, the diagnostic should begin with
+`Speaking to Rowan (example PC).`. If Rowan is not selected, the current
+speaker is explicitly **unknown** and the system will not assume a third-party
+character mentioned in a memory is the person speaking.
+
+For an isolated test, use **End conversation / start new** before generating.
+Old approved dialogue mentioning Rowan in third person would otherwise still
+be passed as short-term conversation history. No records are altered by
+this prompt fix. Do not approve a suggested response that still contradicts
+established campaign facts.
