@@ -57,7 +57,8 @@ public sealed class NpcDialogueService
     /// </summary>
     public async Task<NpcDialogueChoices> GenerateOptionsAsync(
         long campaignId, long npcId, string playerSays, int count = 3,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IReadOnlyList<ConversationTurn>? approvedHistory = null)
     {
         if (string.IsNullOrWhiteSpace(playerSays) || playerSays.Length > 1200)
             throw new ArgumentException(
@@ -108,7 +109,7 @@ public sealed class NpcDialogueService
             var style = Styles[i];
             var system = instruction + "\n" + context + "\nDIALOGUE STYLE: " + style.Direction;
             var reply = await _chatClient.GenerateAsync(
-                system, playerSays.Trim(), cancellationToken);
+                system, playerSays.Trim(), cancellationToken, approvedHistory);
             options.Add(new NpcReplyOption(style.Name, reply));
         }
 
