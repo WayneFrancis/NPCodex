@@ -130,7 +130,10 @@ public sealed partial class MainForm : Form
         sidebar.Controls.Add(_playerCharacters, 0, 5);
         var reload = new Button { Text = "Refresh campaign", Dock = DockStyle.Fill };
         reload.Click += async (_, _) => await RunBusyAsync(LoadCampaignsAsync);
-        sidebar.Controls.Add(reload, 0, 6);
+        var sidebarActions = new FlowLayoutPanel { Dock = DockStyle.Fill };
+        sidebarActions.Controls.Add(reload);
+        sidebarActions.Controls.Add(_addNpcButton);
+        sidebar.Controls.Add(sidebarActions, 0, 6);
         split.Panel1.Controls.Add(sidebar);
 
         var dialogueTab = new TabPage("Dialogue");
@@ -338,6 +341,7 @@ public sealed partial class MainForm : Form
         _deleteMemory.Click += async (_, _) => await RunBusyAsync(DeleteMemoryAsync);
         WirePersonalityEvents();
         WireAliasEvents();
+        _addNpcButton.Click += async (_, _) => await RunBusyAsync(AddNpcAsync);
     }
 
     private async Task LoadCampaignsAsync()
@@ -719,7 +723,8 @@ public sealed partial class MainForm : Form
         _busy = true;
         _generate.Enabled = _approve.Enabled = _saveMemory.Enabled =
             _deleteMemory.Enabled = _campaigns.Enabled = _npcs.Enabled =
-            _saveProfile.Enabled = _saveAttitude.Enabled = false;
+            _saveProfile.Enabled = _saveAttitude.Enabled =
+            _addNpcButton.Enabled = false;
         _playerLine.Enabled = _manualReply.Enabled = _newMemory.Enabled =
             _memoryEditor.Enabled = _memories.Enabled = _playerCharacters.Enabled =
             _newConversation.Enabled = _personalityEditor.Enabled =
@@ -742,6 +747,7 @@ public sealed partial class MainForm : Form
             _generate.Enabled = _approve.Enabled = _saveMemory.Enabled =
                 _deleteMemory.Enabled = _campaigns.Enabled = _npcs.Enabled = true;
             _saveProfile.Enabled = NpcId is not null;
+            _addNpcButton.Enabled = CampaignId is not null;
             _saveAttitude.Enabled = NpcId is not null &&
                 (_attitudeTarget.SelectedItem as CharacterChoice)?.Id is not null;
             _playerLine.Enabled = _manualReply.Enabled = _newMemory.Enabled =
