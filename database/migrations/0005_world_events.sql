@@ -12,6 +12,20 @@ ALTER TABLE memories
     ADD COLUMN world_day INTEGER CHECK (world_day >= 1),
     ADD COLUMN world_time TIME WITHOUT TIME ZONE;
 
+-- Carry forward existing explicit campaign-day data without guessing times.
+-- This also dates demo memories already linked to a day-numbered event.
+UPDATE interactions
+SET world_day = campaign_day
+WHERE campaign_day >= 1 AND world_day IS NULL;
+
+UPDATE memories m
+SET world_day = i.world_day
+FROM interactions i
+WHERE m.campaign_id = i.campaign_id
+  AND m.source_interaction_id = i.interaction_id
+  AND m.world_day IS NULL
+  AND i.world_day IS NOT NULL;
+
 -- Older approved interactions have an unspecified speaker. New NPC-to-NPC
 -- turns record the first speaker's character ID explicitly.
 ALTER TABLE conversation_turns
