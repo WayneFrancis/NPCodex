@@ -818,7 +818,12 @@ public sealed partial class MainForm : Form
         {
             var description = Memory.Content.Replace("\r", " ").Replace("\n", " ");
             if (description.Length > 130) description = description[..130] + "...";
-            return $"#{Memory.Id}  {(Memory.IsSecret ? "[Secret] " : "")}" +
+            var when = Memory.WorldDay is int day
+                ? $"[Day {day}" +
+                  (Memory.WorldTime is TimeOnly time ? $" {time:HH:mm}" : "") +
+                  "] "
+                : "[Undated] ";
+            return $"#{Memory.Id}  {when}{(Memory.IsSecret ? "[Secret] " : "")}" +
                    $"{(Memory.HasEmbedding ? "[Embedded] " : "[Pending] ")}{description}";
         }
     }
