@@ -413,6 +413,49 @@ public sealed class NpcDialogueService
     }
 
     /// <summary>
+    /// When a question is addressed to everyone present, the local model may
+    /// choose ONE NPC to respond from the explicitly offered roster members.
+    /// The choice is deterministic-fallback and never written as a fact.
+    /// </summary>
+    public async Task<long> ChooseReplyingNpcAsync(
+        long campaignId, long initiatingId,
+        IReadOnlyCollection<long> candidateNpcIds, string question,
+        CancellationToken cancellationToken = default)
+    {
+        var names = await _database.GetCampaignCharacterNamesAsync(
+            campaignId, cancellationToken);
+        var candidates = candidateNpcIds.Distinct()
+            .Where(id => id != initiatingId)
+            .Select(id => names.Characters.FirstOrDefault(c => c.CharacterId == id))
+            .Where(c => c is not null)
+            .ToArray();
+        if (candidates.Length == 0)
+            throw new InvalidOperationException("No eligible NPC in the conversation roster.");
+        if (candidates.Length == 1) return candidates[0]!.CharacterId;
+
+        const string instruction = """
+            Select the ONE fictional NPC most likely to answer the
+            question addressed to everyone present.
+            Candidate IDs in the JSON are the only permitted choices.
+            Return ONLY one ID as decimal digits (e.g. 42); no name,
+            quote, explanation, scene dialogue or punctuation.
+            Do not invent any facts about the characters.
+            """;
+        var payload = JsonSerializer.Serialize(new
+        {
+            question = question.Trim(),
+            candidates = candidates.Select(c =>
+                new { id = c!.CharacterId, name = c.Name })
+        });
+        var response = await _chatClient.GenerateAsync(
+            instruction, payload, cancellationToken);
+        return long.TryParse(response.Trim(), out var chosenId) &&
+               candidates.Any(c => c!.CharacterId == chosenId)
+            ? chosenId
+            : candidates[0]!.CharacterId;
+    }
+
+    /// <summary>
     /// DM-facing, unsaved suggestion for the first NPC in an NPC-to-NPC scene.
     /// Nothing becomes canon until the DM approves the scene.
     /// </summary>
