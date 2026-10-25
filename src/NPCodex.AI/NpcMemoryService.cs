@@ -63,7 +63,7 @@ public sealed class NpcMemoryService
     public async Task<IReadOnlyList<MemoryMatch>> SearchAsync(
         long campaignId, long npcId, string query,
         int maxResults = 5, CancellationToken cancellationToken = default,
-        bool includeSecretMemories = true)
+        bool includeSecretMemories = true, int? currentWorldDay = null)
     {
         if (string.IsNullOrWhiteSpace(query))
             throw new ArgumentException("Search question cannot be empty.", nameof(query));
@@ -72,6 +72,7 @@ public sealed class NpcMemoryService
         return await _database.SearchNpcMemoriesAsync(
             campaignId, npcId, OllamaEmbeddingClient.ModelName,
             vector, maxResults, cancellationToken,
-            includeSecretMemories: includeSecretMemories);
+            includeSecretMemories: includeSecretMemories,
+            currentWorldDay: currentWorldDay);
     }
 }
