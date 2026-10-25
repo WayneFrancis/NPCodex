@@ -151,6 +151,7 @@ public sealed partial class MainForm : Form
         actions.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         var generateRow = new FlowLayoutPanel { Dock = DockStyle.Fill };
         generateRow.Controls.Add(_generate);
+        generateRow.Controls.Add(_allowPreparedLies);
         generateRow.Controls.Add(new Label
         {
             Text = "DM-only drafts — nothing is saved until approved.",
@@ -233,8 +234,9 @@ public sealed partial class MainForm : Form
         split.Panel1.Controls.Add(_memories);
 
         var editorLayout = new TableLayoutPanel { Dock = DockStyle.Fill,
-            Padding = new Padding(8), ColumnCount = 1, RowCount = 3 };
+            Padding = new Padding(8), ColumnCount = 1, RowCount = 4 };
         editorLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+        editorLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
         editorLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         editorLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
         split.Panel2.Controls.Add(editorLayout);
@@ -254,13 +256,14 @@ public sealed partial class MainForm : Form
         header.Controls.Add(new Label { Text = "Edit the NPC's actual knowledge, not the AI's guesses.",
             AutoSize = true, Padding = new Padding(8, 6, 0, 0) });
         editorLayout.Controls.Add(header, 0, 0);
-        editorLayout.Controls.Add(_memoryEditor, 0, 1);
+        editorLayout.Controls.Add(CreateMemoryKnowledgeControls(), 0, 1);
+        editorLayout.Controls.Add(_memoryEditor, 0, 2);
 
         var commands = new FlowLayoutPanel { Dock = DockStyle.Fill };
         commands.Controls.Add(_newMemoryButton);
         commands.Controls.Add(_saveMemory);
         commands.Controls.Add(_deleteMemory);
-        editorLayout.Controls.Add(commands, 0, 2);
+        editorLayout.Controls.Add(commands, 0, 3);
     }
 
     private void WireEvents()
@@ -308,6 +311,7 @@ public sealed partial class MainForm : Form
         WireNavigationEvents();
         WireHistoryEvents();
         WireMemorySearchEvents();
+        WireEpistemicEvents();
         WireDndSheetEvents();
         WireLocationsTab();
         _addNpcButton.Click += async (_, _) => await RunBusyAsync(() => AddNpcAsync());
@@ -331,6 +335,9 @@ public sealed partial class MainForm : Form
         if (!await _database.HasConversationBrowserSchemaAsync())
             throw new InvalidOperationException(
                 "Apply database migration 0006_conversation_browser.sql in DBeaver.");
+        if (!await _database.HasMemoryProvenanceSchemaAsync())
+            throw new InvalidOperationException(
+                "Apply database migration 0007_memory_provenance.sql in DBeaver.");
         var previousId = CampaignId;
         var campaigns = await _database.GetCampaignsAsync();
         _ignoreSelectionEvents = true;
@@ -496,6 +503,8 @@ public sealed partial class MainForm : Form
         _importance.Value = 3;
         _isSecret.Checked = false;
         _memoryUseWorldDate.Checked = true;
+        SetSelectedMemoryKnowledgeStatus(MemoryKnowledgeStatus.Recollection);
+        _memoryKnowledgeSource.Clear();
 
         if (CampaignId is not long campaignId || NpcId is not long npcId) return;
 
@@ -520,6 +529,8 @@ public sealed partial class MainForm : Form
         _memoryEditor.Text = item.Memory.Content;
         _importance.Value = item.Memory.Importance;
         _isSecret.Checked = item.Memory.IsSecret;
+        SetSelectedMemoryKnowledgeStatus(item.Memory.KnowledgeStatus);
+        _memoryKnowledgeSource.Text = item.Memory.KnowledgeSource ?? "";
         _memoryUseWorldDate.Checked = item.Memory.WorldDay is not null;
         if (item.Memory.WorldDay is int day)
             _memoryWorldDay.Value = Math.Clamp(
@@ -535,6 +546,8 @@ public sealed partial class MainForm : Form
         _memoryEditor.Clear();
         _importance.Value = 3;
         _isSecret.Checked = false;
+        SetSelectedMemoryKnowledgeStatus(MemoryKnowledgeStatus.Recollection);
+        _memoryKnowledgeSource.Clear();
         _memoryUseWorldDate.Checked = true;
         _memoryWorldDay.Value = _worldDay.Value;
         _memoryWorldTime.Value = _worldTime.Value;
@@ -552,7 +565,9 @@ public sealed partial class MainForm : Form
             campaignId, npcId, _editingMemory?.Id,
             _memoryEditor.Text, (short)_importance.Value,
             _isSecret.Checked, _editingMemory?.Content,
-            when: _memoryUseWorldDate.Checked ? MemoryWorldMoment : null);
+            when: _memoryUseWorldDate.Checked ? MemoryWorldMoment : null,
+            knowledgeStatus: SelectedMemoryKnowledgeStatus,
+            knowledgeSource: _memoryKnowledgeSource.Text);
 
         var embedded = await EmbedSavedMemoryAsync(campaignId, memoryId);
         await LoadMemoriesAsync(memoryId);
@@ -837,6 +852,8 @@ public sealed partial class MainForm : Form
             _memoryWorldDay.Enabled = _memoryWorldTime.Enabled =
             _addPcButton.Enabled = _addRootLocation.Enabled =
             _saveLocation.Enabled = _deleteLocation.Enabled =
+            _allowPreparedLies.Enabled = _memoryKnowledgeStatus.Enabled =
+            _memoryKnowledgeSource.Enabled =
             _memorySearchOwners.Enabled = _memorySearchOwnerFilter.Enabled =
             _memorySearchPhrase.Enabled = _memorySearchMode.Enabled =
             _memorySearchSecrets.Enabled = _memorySearchButton.Enabled =
@@ -880,6 +897,8 @@ public sealed partial class MainForm : Form
             _memoryWorldDay.Enabled = _memoryWorldTime.Enabled =
             _addPcButton.Enabled = _addRootLocation.Enabled = true;
             _saveLocation.Enabled = _deleteLocation.Enabled = _editLocationId is not null;
+            _allowPreparedLies.Enabled = _memoryKnowledgeStatus.Enabled =
+                _memoryKnowledgeSource.Enabled = true;
             _memorySearchOwners.Enabled = _memorySearchOwnerFilter.Enabled =
             _memorySearchPhrase.Enabled = _memorySearchMode.Enabled =
             _memorySearchSecrets.Enabled = _memorySearchButton.Enabled =
@@ -910,8 +929,11 @@ public sealed partial class MainForm : Form
                   (Memory.WorldTime is TimeOnly time ? $" {time:HH:mm}" : "") +
                   "] "
                 : "[Undated] ";
-            return $"#{Memory.Id}  {when}{(Memory.IsSecret ? "[Secret] " : "")}" +
-                   $"{(Memory.HasEmbedding ? "[Embedded] " : "[Pending] ")}{description}";
+            return $"#{Memory.Id}  {when}" +
+                   $"[{MemoryKnowledgeStatus.Label(Memory.KnowledgeStatus)}] " +
+                   (Memory.IsSecret ? "[Secret] " : "") +
+                   (Memory.HasEmbedding ? "[Embedded] " : "[Pending] ") +
+                   description;
         }
     }
 }
