@@ -7,4 +7,8 @@ namespace NPCodex.Data;
 public sealed record CampaignMemoryHit(
     long MemoryId, long OwnerCharacterId, string OwnerName, string OwnerType,
     string Content, string MemoryType, short Importance, bool IsSecret,
-    int? WorldDay, TimeOnly? WorldTime, bool HasEmbedding, double Relevance);
+    int? WorldDay, TimeOnly? WorldTime, bool HasEmbedding, double Relevance)
+{
+    public string KnowledgeStatus { get; init; } = MemoryKnowledgeStatus.Recollection;
+    public string? KnowledgeSource { get; init; }
+}
