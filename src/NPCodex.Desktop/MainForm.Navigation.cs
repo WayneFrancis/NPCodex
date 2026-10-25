@@ -134,9 +134,14 @@ public sealed partial class MainForm
         };
         _tabs.SelectedIndexChanged += async (_, _) =>
         {
-            if (_busy || _tabs.SelectedTab?.Text == "Dialogue") return;
+            if (_busy || (_tabs.SelectedTab != _memoriesTab &&
+                          _tabs.SelectedTab != _personalityTab &&
+                          _tabs.SelectedTab != _aliasesTab &&
+                          _tabs.SelectedTab != _characterSheetTab))
+                return;
             if (_campaignTree.SelectedNode?.Tag is CharacterInfo character)
-                await RunBusyAsync(async () => await SelectEditableCharacterAsync(character.Id));
+                await RunBusyAsync(async () =>
+                    await SelectEditableCharacterAsync(character.Id));
         };
         _asking.SelectedIndexChanged += async (_, _) =>
         {
