@@ -83,7 +83,7 @@ public sealed partial class NPCodexDatabase
     public async Task<IReadOnlyList<MemoryMatch>> SearchNpcMemoriesAsync(
         long campaignId, long npcId, string embeddingModel, float[] queryEmbedding,
         int maxResults = 5, CancellationToken cancellationToken = default,
-        bool includeSecretMemories = true)
+        bool includeSecretMemories = true, int? currentWorldDay = null)
     {
         RequireCampaignId(campaignId);
         if (npcId <= 0)
@@ -95,7 +95,8 @@ public sealed partial class NPCodexDatabase
 
         const string sql = """
             SELECT m.memory_id, m.content, m.importance, m.is_secret,
-                   m.embedding <=> $4 AS cosine_distance
+                   m.embedding <=> $4 AS cosine_distance,
+                   m.world_day, m.world_time
             FROM memories m
             JOIN characters c
               ON c.campaign_id = m.campaign_id
@@ -106,6 +107,8 @@ public sealed partial class NPCodexDatabase
               AND m.embedding_model = $3
               AND m.embedding IS NOT NULL
               AND ($6 OR m.is_secret = false)
+              AND ($7::integer IS NULL OR m.world_day IS NULL
+                   OR m.world_day <= $7)
             ORDER BY m.embedding <=> $4, m.memory_id
             LIMIT $5
             """;
@@ -118,6 +121,11 @@ public sealed partial class NPCodexDatabase
         command.Parameters.AddWithValue(new Vector(queryEmbedding));
         command.Parameters.AddWithValue(maxResults);
         command.Parameters.AddWithValue(includeSecretMemories);
+        command.Parameters.Add(new NpgsqlParameter
+        {
+            NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Integer,
+            Value = (object?)currentWorldDay ?? DBNull.Value
+        });
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
@@ -126,7 +134,11 @@ public sealed partial class NPCodexDatabase
                 reader.GetString(1),
                 reader.GetInt16(2),
                 reader.GetBoolean(3),
-                reader.GetDouble(4)));
+                reader.GetDouble(4))
+            {
+                WorldDay = reader.IsDBNull(5) ? null : reader.GetInt32(5),
+                WorldTime = reader.IsDBNull(6) ? null : reader.GetFieldValue<TimeOnly>(6)
+            });
 
         return matches;
     }
