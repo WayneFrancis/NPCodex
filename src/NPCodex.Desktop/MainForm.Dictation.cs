@@ -16,6 +16,14 @@ public sealed partial class MainForm
     private SpeechRecognitionEngine? _dictationEngine;
     private TextBoxBase? _dictationTarget;
     private bool _dictationStopping;
+    private int _dictationAudioSamples;
+    private int _dictationPeakLevel;
+    private int _dictationDetectedCount;
+    private int _dictationRejectedCount;
+    private int _dictationAcceptedCount;
+    private int _dictationHypothesisCount;
+    private long _lastDictationMeterAtTicks;
+    private string _dictationLastSession = "No dictation attempt completed yet.";
 
     private void AttachDictationToTextBoxes(Control root)
     {
@@ -110,15 +118,47 @@ public sealed partial class MainForm
                     "Windows voice typing with Win+H as an alternative.");
 
             engine = new SpeechRecognitionEngine(selected);
+            _dictationAudioSamples = _dictationPeakLevel = 0;
+            _dictationDetectedCount = _dictationRejectedCount = 0;
+            _dictationAcceptedCount = _dictationHypothesisCount = 0;
+            _lastDictationMeterAtTicks = 0;
             engine.InitialSilenceTimeout = TimeSpan.FromSeconds(30);
             engine.BabbleTimeout = TimeSpan.FromSeconds(10);
             engine.LoadGrammar(new DictationGrammar());
             engine.SetInputToDefaultAudioDevice();
             var activeEngine = engine;
-            engine.SpeechDetected += (_, _) => ReportDictationStatus(
-                activeEngine, "Speech detected. Recognizing words...");
+            engine.AudioLevelUpdated += (_, e) =>
+            {
+                System.Threading.Interlocked.Increment(ref _dictationAudioSamples);
+                if (e.AudioLevel > _dictationPeakLevel)
+                    _dictationPeakLevel = e.AudioLevel;
+                // System.Speech raises multiple meter events a second.
+                // Keep its diagnostics readable and avoid flooding BeginInvoke.
+                var now = DateTime.UtcNow.Ticks;
+                var last = System.Threading.Interlocked.Read(ref _lastDictationMeterAtTicks);
+                if (now - last >= TimeSpan.TicksPerSecond * 2 &&
+                    System.Threading.Interlocked.CompareExchange(
+                        ref _lastDictationMeterAtTicks, now, last) == last)
+                    ReportDictationStatus(activeEngine,
+                        $"Recognizer microphone level {e.AudioLevel}/100 " +
+                        $"(peak {_dictationPeakLevel}/100). " +
+                        "Speak a short phrase; watch for 'Speech detected'.");
+            };
+            engine.SpeechDetected += (_, _) =>
+            {
+                System.Threading.Interlocked.Increment(ref _dictationDetectedCount);
+                ReportDictationStatus(activeEngine,
+                    "Speech detected by System.Speech. Recognizing words...");
+            };
+            engine.SpeechHypothesized += (_, e) =>
+            {
+                System.Threading.Interlocked.Increment(ref _dictationHypothesisCount);
+                ReportDictationStatus(activeEngine,
+                    "Speech hypothesis: " + e.Result.Text);
+            };
             engine.SpeechRecognitionRejected += (_, e) =>
             {
+                System.Threading.Interlocked.Increment(ref _dictationRejectedCount);
                 var recognized = e.Result?.Text;
                 var detail = !string.IsNullOrWhiteSpace(recognized)
                     ? $"Heard '{recognized}', but the recognizer rejected it."
@@ -144,6 +184,7 @@ public sealed partial class MainForm
                         $"Recognition confidence low ({e.Result.Confidence:P0}); ignored.");
                     return;
                 }
+                System.Threading.Interlocked.Increment(ref _dictationAcceptedCount);
                 var phrase = e.Result.Text;
                 if (!IsDisposed && IsHandleCreated)
                 {
@@ -247,9 +288,12 @@ public sealed partial class MainForm
             MessageBox.Show(this,
                 $"Windows UI language: {current.Name}\n" +
                 $"Installed System.Speech recognizers: {installed.Count}\n" +
-                description +
-                "\n\nWindows 11 voice typing is separate from System.Speech. " +
-                "To test that alternative, click in a text box and press Win+H.",
+                description + "\n\nLast session:\n" + _dictationLastSession +
+                "\n\nIf the microphone level stays 0 and Audio updates = 0, " +
+                "System.Speech may not be receiving audio from the default " +
+                "capture device even though Windows+H works. If levels change " +
+                "but nothing is recognized, the legacy engine or grammar is " +
+                "the more likely cause.",
                 "Speech recognition diagnostics", MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
         }
@@ -291,12 +335,17 @@ public sealed partial class MainForm
     private void FinishDictation(SpeechRecognitionEngine engine)
     {
         if (!ReferenceEquals(engine, _dictationEngine)) return;
+        _dictationLastSession =
+            $"Audio updates: {_dictationAudioSamples}; peak level: {_dictationPeakLevel}/100; " +
+            $"speech detected: {_dictationDetectedCount}; " +
+            $"hypotheses: {_dictationHypothesisCount}; " +
+            $"recognized: {_dictationAcceptedCount}; rejected: {_dictationRejectedCount}.";
         _dictationEngine = null;
         _dictationTarget = null;
         _dictationStopping = false;
         engine.Dispose();
         if (!IsDisposed)
-            _status.Text = "Dictation stopped. Text remains editable and unsaved.";
+            _status.Text = "Dictation stopped. " + _dictationLastSession;
     }
 
     private void DisposeDictation()
