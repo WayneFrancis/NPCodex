@@ -696,3 +696,148 @@ ORDER BY source.name, target.name;
 This is a DM-only prototype. Changes are committed to GitHub, but still
 require verification by building on Windows and exercising the PostgreSQL
 migration; no automatic schema updater is installed.
+
+
+## Phase 9: Social disclosure, NPC background scenes, witnesses and in-world time
+
+This update adds a **fictional game clock** and stores who initiated an
+approved exchange, who replied, and who overheard it. It also changes the
+Natural/Warm/Guarded suggestions to vary how much information the speaking
+NPC shares **with the listener**, based on the NPC's opinion of the listener
+and of named third-party NPCs.
+
+### Apply migration 0005 once
+
+```powershell
+cd D:\dev\NPCodex
+git pull --ff-only
+```
+
+In DBeaver, execute the **whole** migration
+[`database/migrations/0005_world_events.sql`](database/migrations/0005_world_events.sql)
+**once** against your existing `npcodex` PostgreSQL database. It adds
+`world_day` and `world_time` to interactions and memories, and
+`speaker_character_id` to conversation turns. It **does not create new tables
+or backdate existing history**. Existing undated interactions and memories
+remain dated *unknown*. The application checks for this migration at launch.
+
+```sql
+SELECT version FROM schema_migrations ORDER BY version;
+SELECT COUNT(*) AS tables FROM information_schema.tables
+WHERE table_schema = 'public' AND table_type = 'BASE TABLE';
+```
+
+Expected: five migration versions, and still **17 public tables**.
+
+```powershell
+dotnet build NPCodex.slnx
+dotnet run --project src/NPCodex.Desktop
+```
+
+### Try the relationship/disclosure triangle
+
+1. Select Mira Vale as **replying NPC**, and Rowan as **initiating speaker**.
+2. Give Mira a high disposition toward Rowan in **Personality & Relationships**,
+   but a low disposition toward Darrin/Red. Leave both opinion records
+   non-private if you want them available to dialogue generation.
+3. On Dialogue ask `What do you think of Red?`. The alias matcher is
+   **case-sensitive** for mentioned proper names: `Red` matches the stored
+   alias; `red` does not.
+4. Compare the drafts. **Natural** is normal disclosure, **Warm** tries
+   to offer more supported details, **Guarded** should limit optional
+   detail or decline to elaborate. Warm/Guarded are relative to **Rowan**,
+   not relative to Red.
+5. Reverse Mira's opinions and regenerate. She should be much more protective
+   of Red if she likes Red but distrusts Rowan. Any claims about Red must
+   still be grounded in established context or labelled subjective opinions.
+6. Confirm **Private opinion** suppresses that relationship from generated
+   prompts. Other NPC relationships only enter context if uniquely mentioned
+   by their proper name or an approved alias.
+
+**Truthfulness:** This version models selective candour, evasion and
+subjective prejudice. It does **not** automatically fabricate objectively
+false crimes, transactions or rumours because a disposition becomes negative.
+An intentional lie or false belief needs a separate DM-authored belief/
+knowledge model so character deception can be consistent rather than
+hallucinated.
+
+### Generate a background NPC-to-NPC conversation
+
+1. Select **Mira Vale** as the responding NPC and **Darrin Reed (NPC)**
+   in the **Initiating speaker (PC or NPC)** dropdown on the left.
+2. Choose an in-world `Campaign day` and `HH:mm` under the
+   **In-world time / NPC scene / people who heard the exchange** panel.
+   The counter starts at **Day 1, 09:00**; these are *not* today's
+   real-world date/time.
+3. Enter an optional topic such as `trade routes to the northern ruins`.
+   Click **Suggest NPC opening**. This generates the initiating NPC's
+   *unsaved* first line. Edit it as desired.
+4. Click **Generate 3 replies** as usual. Choose, edit and approve Mira's
+   reply. This writes an interaction and an approved conversation turn,
+   recording **both speakers** and the in-world time.
+5. Optionally check **Also save a memory for this NPC** to write an edited
+   first-person memory owned by Mira.
+6. To give memories to **other characters who heard the exchange**, check
+   **Give checked characters their own memory** and tick their entries in
+   the adjacent list. This may include the initiating speaker, another NPC
+   standing nearby, or a PC. Only characters selected *and* approved will
+   receive new memories.
+
+Each recipient's memory is associated with the same interaction and dated
+to that campaign day and time. A witness memory explicitly says **who said
+what** and that they **overheard** it. It deliberately does not assert that
+every claim in the dialogue actually occurred. A memory for the initiating
+speaker instead states what **they said** and what the replying NPC answered.
+The recipient's memory is stored on their own character record, not
+the replying NPC's record. The NPC memory editor currently lists memories
+for the selected *replying NPC*; PC witness memories are in PostgreSQL
+and can be inspected with SQL. An expanded all-characters memory viewer is
+a future interface improvement.
+
+The scene, participants, turns and memories are written in **one transaction**:
+a database error rolls them back together. Embedding occurs **after** the
+transaction; a failed embedding does not undo an approved scene and may be
+retried using the existing `embed-memories` command.
+
+### Chronology and older memories
+
+The **Memories** tab displays `[Day N HH:mm]` for dated memories and
+`[Undated]` for older ones. **Memory has a known in-world date/time** controls
+whether manually edited memories acquire a game date; older undated memories
+are not silently assigned Day 1 by merely opening the editor.
+
+Semantic retrieval includes the memory's fictional day and time, and
+excludes memories dated **after** the current fictional moment.
+Qwen receives those dates and is instructed not to invent phrases like
+"two weeks ago" when a memory is undated or when the day arithmetic does
+not justify that elapsed time. Previously recorded interactions keep their
+unknown historical dates. Fictional day numbers are system-neutral; support
+for individual RPG calendars (e.g., named months) can be added on top of
+the stored chronology.
+
+Example audit:
+
+```sql
+SELECT i.interaction_id, i.world_day, i.world_time,
+       i.summary, i.transcript
+FROM interactions i
+WHERE i.world_day IS NOT NULL
+ORDER BY i.world_day DESC, i.world_time DESC, i.interaction_id DESC;
+
+SELECT c.name AS remembered_by, m.memory_type,
+       m.world_day, m.world_time, m.content
+FROM memories m
+JOIN characters c ON c.campaign_id = m.campaign_id
+                 AND c.character_id = m.owner_character_id
+WHERE m.memory_type = 'overheard'
+ORDER BY m.memory_id DESC;
+```
+
+**Limitations:** Approved speech is canon as *speech*, not necessarily as
+truth. AI-generated opening lines and replies are editable DM drafts,
+not automatically approved background facts. Different named NPCs can
+start conversations, but seamless automatic back-and-forth NPC turn
+alternation is not yet implemented. The three suggestions are probabilistic;
+test their different disclosure levels with the same question before
+relying on the behavior. Migration and Windows build have not been
+verified in this environment.
