@@ -1308,3 +1308,88 @@ Whisper-compatible engine, using the same context-menu workflow.
 
 The changes are committed and reviewed statically; confirm the
 Windows build and microphone behaviour locally.
+
+
+## Phase 11 — Beliefs, rumours and DM-controlled prepared stories
+
+**Apply this new migration once** in DBeaver, after
+`0006_conversation_browser.sql`:
+
+`database/migrations/0007_memory_provenance.sql`
+
+It adds `memories.knowledge_status` (with a validated set of values) and
+`memories.knowledge_source` (optional source attribution). Existing
+memories are retained **unaltered**, with `knowledge_status='recollection'`
+as the conservative default. Existing pgvector embeddings remain valid,
+because the words of the memory have not changed.
+
+### What the DM can now record
+
+In the **Memories** tab, choose a memory and edit its **What kind of
+knowledge?** dropdown and optional **Source** text. Then use the
+regular Save memory button.
+
+- **Recollection**: Something this particular NPC remembers; their
+  recollection may be imperfect. Default for old and new memories.
+- **Verified fact**: A DM-confirmed true fact this specific NPC knows.
+  It is **not** automatically known to other characters.
+- **Belief**: A subjective belief this character holds, possibly wrong.
+- **Rumour**: Something heard from someone else; enter the source if
+  known, such as `A sailor in the Dock Ward`.
+- **Prepared lie**: A specific false statement deliberately created
+  by the DM for this NPC to tell; the system must not invent supporting
+  false events. It is **excluded** from generated dialogue by default.
+
+These labels and source descriptions are stored per memory. The **Memory
+Search** tab displays the knowledge label in its own column and shows the
+source in the selected result's read-only preview.
+
+### Effect on dialogue generation
+
+Retrieved memories now carry their knowledge label/source into the
+local Qwen prompt. The instructions distinguish DM-confirmed facts from
+potentially mistaken beliefs and secondhand rumours. Characters may
+speak their beliefs naturally while not treating them as global
+objectively established facts. Prior approved speech continues to
+be historical speech; it does not prove every spoken claim is true.
+
+The Dialogue tab has **Permit DM-authored prepared lies in generated
+replies**. It is **unchecked** by default. When checked, relevant
+`cover_story` memories may be supplied to the model and it *may*
+repeat an explicitly authored false claim when the relationship and
+conversation justify it. The model is still instructed never to invent
+new falsehoods or corroborating incidents. Permission resets when a
+conversation is completed or a new campaign is chosen. A DM must
+still inspect and approve every draft.
+
+Secret-marked memories retain their prior safety behaviour and are
+**never sent into normal reply generation**, regardless of the
+prepared-lies checkbox. Memories must also be embedded with
+`nomic-embed-text` to appear in the existing semantic retrieval. To
+make an older or newly edited memory available, use the existing
+embedding workflow.
+
+For now, a **Verified fact** is a DM label on a character-specific
+memory, not a separate campaign-wide authoritative fact registry.
+Authoritative world events and propagation of corrected knowledge
+to other NPCs are possible later phases.
+
+### Smoke test
+
+1. Pull commits and apply `0007_memory_provenance.sql`.
+2. Build with `dotnet build NPCodex.slnx`, run the desktop app.
+3. Select Mira, create a `Belief` memory saying, for example,
+   `I think the Harbour Master is hiding a map`. Save it. Search
+   under Memory Search and verify the Belief label appears.
+4. Create a second `Rumour` memory with a named source and verify it
+   appears in the memory preview and, when retrieved, is framed as hearsay.
+5. Create a non-secret `Prepared lie` memory with an explicit,
+   DM-authored false sentence. With the dialogue checkbox **off**,
+   the lie should not be among retrieved memory references.
+6. When appropriate for the scene, check **Permit DM-authored
+   prepared lies** and generate another response; the cover story can
+   then be retrieved but must still be reviewed. Check that the
+   checkbox resets after an approved exchange.
+
+This code was committed and statically reviewed. It has not been
+compiled or database-tested from the assistant environment.
