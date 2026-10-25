@@ -169,6 +169,8 @@ public sealed partial class MainForm
         if (_campaignCharacters.All(c => c.Id != id)) return;
         if (_campaignCharacters.First(c => c.Id == id).Type != "npc")
         {
+            PopulateAliasTargets(id);
+            await LoadAliasesAsync();
             await LoadDndCharacterSheetAsync(id);
             return;
         }
@@ -269,8 +271,11 @@ public sealed partial class MainForm
                     parent.Nodes.Add(node);
                 else
                 {
-                    unplaced ??= new TreeNode("Unassigned location");
-                    _campaignTree.Nodes.Add(unplaced);
+                    if (unplaced is null)
+                    {
+                        unplaced = new TreeNode("Unassigned location");
+                        _campaignTree.Nodes.Add(unplaced);
+                    }
                     unplaced.Nodes.Add(node);
                 }
                 if (person.Id == selected) _campaignTree.SelectedNode = node;
@@ -436,19 +441,24 @@ public sealed partial class MainForm
             .Where(c => c.Id is long).Select(c => c.Id!.Value).ToHashSet();
         // The roster is the complete list of those present. Everyone hears
         // normal exchanges. Private exchanges include only the two speakers.
-        var initial = _memoryRecipients.Items.Count == 0;
+        var earlierRecipients = _memoryRecipients.Items.Cast<CharacterChoice>()
+            .Where(c => c.Id is long).Select(c => c.Id!.Value).ToHashSet();
         _memoryRecipients.Items.Clear();
         foreach (CharacterChoice person in _conversationRoster.Items)
         {
             if (person.Id == ReplyCharacterId) continue;
             var canHear = !_privateExchange.Checked || person.Id == PlayerId;
-            _memoryRecipients.Items.Add(person, canHear && (initial ||
-                existingChecks.Contains(person.Id!.Value)));
+            _memoryRecipients.Items.Add(person,
+                canHear && (!earlierRecipients.Contains(person.Id!.Value) ||
+                            existingChecks.Contains(person.Id!.Value)));
         }
         _memoryRecipients.Enabled = !_privateExchange.Checked;
         _giveListenerMemories.Checked = true;
         _createMemoryOnApproval.Enabled = SelectedResponderIsNpc;
         if (!SelectedResponderIsNpc) _createMemoryOnApproval.Checked = false;
         _generate.Enabled = SelectedResponderIsNpc || ReplyAll;
+        _suggestNpcOpening.Enabled = SelectedResponderIsNpc &&
+            PlayerId is long speakerId && _campaignCharacters.Any(c =>
+                c.Id == speakerId && c.Type == "npc");
     }
 }
