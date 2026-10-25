@@ -373,6 +373,15 @@ public sealed partial class MainForm : Form
 
         if (_rosterCampaignId != campaignId)
         {
+            // Never retain results or a sheet selection from another campaign.
+            foreach (var tab in _savedSearches.Keys.ToArray())
+            {
+                _statementTabs.TabPages.Remove(tab);
+                tab.Dispose();
+            }
+            _savedSearches.Clear();
+            _sheetTargetId = null;
+            _sheetCharacter.Text = "Select a character in this campaign's tree";
             _rosterCampaignId = campaignId;
             _rosterIds.Clear();
             var initialNpc = world.Characters.FirstOrDefault(c => c.Type == "npc");
