@@ -53,6 +53,9 @@ try
     var aliasesInstalled = personalityInstalled && await db.HasCharacterAliasSchemaAsync();
     Console.WriteLine($"Character alias migration: {(aliasesInstalled ? "installed" : "NOT installed")}");
 
+    var worldInstalled = aliasesInstalled && await db.HasWorldEventsSchemaAsync();
+    Console.WriteLine($"World event migration: {(worldInstalled ? "installed" : "NOT installed")}");
+
     if (!status.InitialMigrationInstalled || status.PgvectorVersion == "not installed")
     {
         Console.Error.WriteLine(
