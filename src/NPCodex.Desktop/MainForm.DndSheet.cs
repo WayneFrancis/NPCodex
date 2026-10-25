@@ -9,6 +9,7 @@ public sealed partial class MainForm
     private readonly TabPage _characterSheetTab = new("D&D Character Sheet");
     private readonly Label _sheetCharacter = new() { AutoSize = true, Text = "Select a character in the tree" };
     private readonly TextBox _sheetSpecies = new() { Width = 210 };
+    private readonly TextBox _sheetOccupation = new() { Width = 310, MaxLength = 200 };
     private readonly TextBox _sheetClass = new() { Width = 210 };
     private readonly TextBox _sheetBackground = new() { Width = 210 };
     private readonly TextBox _sheetAlignment = new() { Width = 210 };
@@ -59,6 +60,7 @@ public sealed partial class MainForm
             root.Controls.Add(control, 1, row++);
         }
         Add("Selected character", _sheetCharacter);
+        Add("Occupation / role", _sheetOccupation);
         Add("Species / ancestry", _sheetSpecies);
         Add("Class", _sheetClass);
         Add("Level", _sheetLevel);
@@ -106,6 +108,7 @@ public sealed partial class MainForm
         var data = await _database.GetDndSheetAsync(campaignId, characterId);
         _sheetTargetId = characterId;
         _sheetCharacter.Text = $"{person.Name} ({person.Type.ToUpperInvariant()})";
+        _sheetOccupation.Text = person.Occupation ?? "";
         _sheetSpecies.Text = data.Species;
         _sheetClass.Text = data.CharacterClass;
         _sheetLevel.Value = data.Level;
@@ -142,6 +145,16 @@ public sealed partial class MainForm
             (int)_sheetAC.Value, (int)_sheetHP.Value, (int)_sheetSpeed.Value,
             _sheetFeatures.Text, _sheetEquipment.Text, _sheetNotes.Text);
         await _database.SaveDndSheetAsync(campaignId, charId, sheet);
-        _status.Text = $"Saved D&D character sheet for {_sheetCharacter.Text}.";
+        await _database.UpdateCharacterOccupationAsync(
+            campaignId, charId, _sheetOccupation.Text);
+        // Update the visible tree without reloading and clearing a draft
+        // conversation that the DM may be writing on another tab.
+        var occupation = string.IsNullOrWhiteSpace(_sheetOccupation.Text)
+            ? null : _sheetOccupation.Text.Trim();
+        _campaignCharacters = _campaignCharacters.Select(c =>
+            c.Id == charId ? c with { Occupation = occupation } : c).ToArray();
+        PopulateLocationTree();
+        _status.Text =
+            $"Saved D&D character sheet and occupation for {_sheetCharacter.Text}.";
     }
 }
