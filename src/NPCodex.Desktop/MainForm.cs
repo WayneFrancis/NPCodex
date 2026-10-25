@@ -84,10 +84,12 @@ public sealed partial class MainForm : Form
         _dialogueService = new NpcDialogueService(_database, _memoryService, _chatClient);
         BuildLayout();
         WireEvents();
+        AttachDictationToTextBoxes(this);
 
         Shown += async (_, _) => await RunBusyAsync(LoadCampaignsAsync);
         FormClosed += (_, _) =>
         {
+            DisposeDictation();
             _chatClient.Dispose();
             _embeddingClient.Dispose();
             _database.DisposeAsync().AsTask().GetAwaiter().GetResult();
