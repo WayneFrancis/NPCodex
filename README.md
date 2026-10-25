@@ -1393,3 +1393,76 @@ to other NPCs are possible later phases.
 
 This code was committed and statically reviewed. It has not been
 compiled or database-tested from the assistant environment.
+
+
+## Phase 11 follow-up: Guard against invented rumours in NPC replies
+
+This change is **code only** and requires **no new database migration**
+beyond the existing Phase 11 schema.
+
+Why the earlier wording instructions were insufficient: the NPC dialogue
+pipeline previously included the closest five vector matches, even if a
+memory was actually about an unrelated subject. A question about the
+Harbour Master's smuggling map could retrieve a memory about a map of the
+northern ruins. Qwen could then invent "I've heard whispers" even when
+Mira's chronologically eligible memory contained no such information.
+
+The updated NPC reply path:
+1. Retrieve up to 25 non-secret, chronologically eligible vector memories,
+   then show at most 5 in the final reference context.
+2. When a question names a clear multi-word subject (e.g., **Harbour Master**),
+   retain only memories that mention the name and overlap important
+   topical words (e.g., **smuggling**, **routes**, **map**).
+3. Exclude prior approved conversation turns dated *after* the current
+   campaign day/time from the generation context.
+4. For a named-subject question **without a matching memory or prior
+   approved NPC statement**, do not ask Qwen to guess. Prepare three
+   cautious, editable replies instead:
+   *Natural*: "I don't have any information I can confirm about that.
+   Where did you hear it?"
+   *Warm*: "I don't have anything reliable to tell you about that.
+   What have you heard, and who told you? Perhaps we can make sense of it."
+   *Guarded*: "I can't confirm that."
+   These are DM drafts, not saved statements. The UI explicitly reports
+   that this evidence fallback bypassed Qwen.
+5. The Dialogue relationship/status display reports how many memory
+   candidates were excluded as off-topic.
+
+**Important limitations**: this is a conservative named-subject topic
+gate, **not a general entailment checker** or guarantee that Qwen never
+hallucinates. It can miss memories that refer to the subject only by
+pronoun, alias, or paraphrase. It applies to questions with a clearly
+capitalized multi-word name/title, not every topic. In ambiguous cases,
+the DM can always edit the answer or add a properly dated memory. It
+does **not** delete or change any memories; the semantic Memory Search tab
+continues to work as before.
+
+### Re-run the Harbour Master regression
+
+Use the same two saved memories and Rowan's same question, changing only
+the campaign time:
+
+- **Before Garrick told Mira the rumour**: zero eligible topic memories.
+  The status should say it used cautious drafts, with no invented
+  "whispers", smuggling conspiracy, or northern-ruins story.
+- **After Garrick's rumour, before the office visit**: the rumour is
+  eligible; Mira may report Garrick's words as an **unverified rumour**.
+- **After Mira examined the tidal chart**: the verified discovery is
+  also eligible; Mira should explain what she learned and distinguish
+  it from the earlier rumour.
+
+A memory about an unrelated map should never appear as evidence for
+this specific named-subject question. Check the *retrieved memory
+references* and the conversation status as well as the generated text.
+
+Build/run normally:
+
+```powershell
+cd D:\dev\NPCodex
+git pull --ff-only
+dotnet build NPCodex.slnx
+dotnet run --project src/NPCodex.Desktop
+```
+
+The source changes are committed and statically checked, but require
+local .NET compilation and in-game testing.
