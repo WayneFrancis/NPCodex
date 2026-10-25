@@ -1072,3 +1072,69 @@ Rowan's reply manually in the dialogue editor, choose the manual reply
 option, then approve it. Selecting **Rowan Asking → Mira Answering** enables
 AI suggestions. A status line next to the Generate button now explains
 the distinction so the disabled state is not mysterious.
+
+
+## Phase 10 follow-up: keyboard shortcuts, role editing, and Windows dictation
+
+**No database migration** is required. The `characters.occupation` field
+already stores the NPC/PC's occupation or role.
+
+After `git pull --ff-only`, run:
+
+```powershell
+dotnet restore NPCodex.slnx
+dotnet build NPCodex.slnx
+dotnet run --project src/NPCodex.Desktop
+```
+
+### Conversation roster
+
+When the **Characters present** list has focus, press **Delete** to remove
+the highlighted character from *this conversation roster* without a
+confirmation dialog. This does **not** delete the character, their saved
+memories, or any previous approved conversation.
+
+### Editing occupations / roles
+
+Select a character in the tree, open **D&D Character Sheet**, then edit
+the new **Occupation / role** field and click **Save character sheet**.
+The value is saved to the existing `characters.occupation` column,
+independently of the D&D class, and the character's tree label refreshes
+immediately. For example, an innkeeper can also be a level-3 fighter.
+
+### Local microphone dictation
+
+NPCodex uses Windows' `System.Speech` API (NuGet package
+`System.Speech` version `10.0.0`) for a basic, local, continuous
+dictation workflow. It is **not** a cloud transcription service and does
+not automatically call Ollama or create campaign memories.
+
+1. Right-click an editable text field, such as the player dialogue box,
+   manual reply, NPC personality field, memory editor, character sheet
+   notes, or new character/location dialog.
+2. Select **Start dictation (microphone)**.
+3. Speak normally. Each recognised phrase is inserted at that field's
+   caret position. Existing text is preserved; it remains an editable
+   draft and is not saved automatically.
+4. Right-click again (in any text field) and choose **Stop dictation**.
+   Dictation also stops when the active field is disposed or the app exits.
+
+Only one text field is listening at a time. Start/Stop menu items change
+availability to match the current recording state. The ordinary
+Cut/Copy/Paste/Select All commands remain available.
+
+**Important requirements:** Windows needs an installed legacy-compatible
+speech recognition language/engine, a working default microphone, and
+microphone access permissions. This API is a compatibility technology and
+is less accurate with D&D names, unusual dialects and noisy rooms than
+modern Whisper-based recognisers. The selected recognition locale is shown
+in NPCodex's status line while the microphone is active. If no compatible
+recogniser is installed, the app displays an explanation rather than
+crashing; you can use the built-in **Windows + H** voice-typing interface
+as a separate fallback. Text recognition is handled by the local Windows
+engine; NPCodex does not create audio files or save audio clips.
+
+This implementation is committed but still needs a Windows build and
+microphone test. In particular, confirm that right-click → start,
+speaking a phrase, right-click → stop, and starting again in another
+field work as expected before trusting it for long session notes.
