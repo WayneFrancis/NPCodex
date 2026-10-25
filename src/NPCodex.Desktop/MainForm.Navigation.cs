@@ -145,7 +145,7 @@ public sealed partial class MainForm
         _campaignTree.AfterSelect += async (_, e) =>
         {
             if (_updatingTree || _busy) return;
-            if (e.Node.Tag is CharacterInfo character &&
+            if (e.Node?.Tag is CharacterInfo character &&
                 (_tabs.SelectedTab == _memoriesTab ||
                  _tabs.SelectedTab == _personalityTab ||
                  _tabs.SelectedTab == _aliasesTab ||
@@ -156,7 +156,7 @@ public sealed partial class MainForm
         _campaignTree.NodeMouseDoubleClick += async (_, e) =>
         {
             if (_tabs.SelectedTab?.Text == "Dialogue" &&
-                e.Node.Tag is CharacterInfo character)
+                e.Node?.Tag is CharacterInfo character)
                 await AddToConversationAsync(character.Id);
         };
         _tabs.SelectedIndexChanged += async (_, _) =>
