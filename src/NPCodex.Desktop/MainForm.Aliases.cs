@@ -64,8 +64,9 @@ public sealed partial class MainForm
         _aliasDelete.Click += async (_, _) => await RunBusyAsync(DeleteAliasAsync);
     }
 
-    private void PopulateAliasTargets()
+    private void PopulateAliasTargets(long? preferredCharacterId = null)
     {
+        preferredCharacterId ??= NpcId;
         _loadingAliases = true;
         try
         {
@@ -74,7 +75,7 @@ public sealed partial class MainForm
                 _aliasTarget.Items.Add(new CharacterChoice(
                     person.Id, $"{person.Name} ({person.Type.ToUpperInvariant()})"));
             _aliasTarget.SelectedItem = _aliasTarget.Items.Cast<CharacterChoice>()
-                .FirstOrDefault(c => c.Id == NpcId)
+                .FirstOrDefault(c => c.Id == preferredCharacterId)
                 ?? _aliasTarget.Items.Cast<CharacterChoice>().FirstOrDefault();
         }
         finally { _loadingAliases = false; }
