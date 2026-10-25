@@ -12,4 +12,8 @@ public sealed record MemoryMatch(
     string Content,
     short Importance,
     bool IsSecret,
-    double CosineDistance);
+    double CosineDistance)
+{
+    public int? WorldDay { get; init; }
+    public TimeOnly? WorldTime { get; init; }
+}
