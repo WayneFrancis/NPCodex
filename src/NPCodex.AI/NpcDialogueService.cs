@@ -97,7 +97,7 @@ public sealed class NpcDialogueService
             includeCoverStories: allowPreparedLies);
         var namedSubjects = NpcEvidenceScope.NamedSubjects(playerSays);
         var memories = NpcEvidenceScope.FilterNamedSubject(
-            candidateMemories, namedSubjects).Take(5).ToArray();
+            candidateMemories, namedSubjects, playerSays).Take(5).ToArray();
 
         // Rewinding the in-world clock must not give Qwen conversations
         // that happened later, even if the UI still shows those exchanges.
