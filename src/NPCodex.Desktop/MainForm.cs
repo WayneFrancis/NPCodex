@@ -408,6 +408,7 @@ public sealed partial class MainForm : Form
             // A new campaign starts with an empty conversation. The DM chooses
             // who is present by double-clicking them in the location tree.
             _rosterIds.Clear();
+            _allowPreparedLies.Checked = false;
             ResetMemorySearchForCampaign();
         }
         else
@@ -776,6 +777,7 @@ public sealed partial class MainForm : Form
         _newMemory.Clear();
         _createMemoryOnApproval.Checked = false;
         _privateExchange.Checked = false;
+        _allowPreparedLies.Checked = false;
         ResetSuggestions();
         _status.Text =
             $"Interaction #{result.InteractionId} approved on {CurrentWorldMoment}; " +
