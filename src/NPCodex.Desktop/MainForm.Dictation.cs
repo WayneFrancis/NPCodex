@@ -1,0 +1,218 @@
+using System.ComponentModel;
+using System.Globalization;
+using System.Speech.Recognition;
+using System.Windows.Forms;
+
+namespace NPCodex.Desktop;
+
+/// <summary>
+/// Right-click dictation for standard WinForms text boxes.
+/// Only one microphone/recognizer session is active across the form.
+/// Recognized text is draft text: it is never auto-approved or saved.
+/// </summary>
+public sealed partial class MainForm
+{
+    private readonly HashSet<TextBoxBase> _dictationFields = [];
+    private SpeechRecognitionEngine? _dictationEngine;
+    private TextBoxBase? _dictationTarget;
+    private bool _dictationStopping;
+
+    private void AttachDictationToTextBoxes(Control root)
+    {
+        if (root is TextBoxBase box && _dictationFields.Add(box))
+        {
+            // Retain existing menu if present; otherwise provide familiar
+            // editing commands alongside the start/stop dictation actions.
+            var menu = box.ContextMenuStrip;
+            if (menu is null)
+            {
+                menu = new ContextMenuStrip();
+                var cut = new ToolStripMenuItem("Cut");
+                cut.Click += (_, _) => { if (!box.ReadOnly) box.Cut(); };
+                var copy = new ToolStripMenuItem("Copy");
+                copy.Click += (_, _) => box.Copy();
+                var paste = new ToolStripMenuItem("Paste");
+                paste.Click += (_, _) => { if (!box.ReadOnly) box.Paste(); };
+                var select = new ToolStripMenuItem("Select All");
+                select.Click += (_, _) => box.SelectAll();
+                menu.Items.AddRange([cut, copy, paste, select]);
+                box.ContextMenuStrip = menu;
+            }
+
+            menu.Items.Add(new ToolStripSeparator());
+            var start = new ToolStripMenuItem("Start dictation (microphone)");
+            var stop = new ToolStripMenuItem("Stop dictation");
+            start.Click += (_, _) => StartDictation(box);
+            stop.Click += (_, _) => StopDictation();
+            menu.Items.Add(start);
+            menu.Items.Add(stop);
+            menu.Opening += (_, _) =>
+            {
+                var active = _dictationEngine is not null;
+                start.Visible = !active;
+                start.Enabled = !box.ReadOnly && box.Enabled && !_dictationStopping;
+                stop.Visible = active;
+                stop.Enabled = !_dictationStopping;
+            };
+            box.Disposed += (_, _) =>
+            {
+                _dictationFields.Remove(box);
+                if (ReferenceEquals(box, _dictationTarget))
+                    StopDictation();
+            };
+        }
+
+        foreach (Control child in root.Controls)
+            AttachDictationToTextBoxes(child);
+    }
+
+    private void StartDictation(TextBoxBase target)
+    {
+        if (_dictationEngine is not null || _dictationStopping ||
+            target.ReadOnly || target.IsDisposed)
+            return;
+
+        SpeechRecognitionEngine? engine = null;
+        try
+        {
+            // Prefer the current Windows language if it has a recognizer,
+            // otherwise an installed recognizer for the same language.
+            var recognizers = SpeechRecognitionEngine.InstalledRecognizers();
+            var locale = CultureInfo.CurrentUICulture;
+            var selected = recognizers.FirstOrDefault(info =>
+                info.Culture.Equals(locale))
+                ?? recognizers.FirstOrDefault(info =>
+                    info.Culture.TwoLetterISOLanguageName ==
+                    locale.TwoLetterISOLanguageName)
+                ?? recognizers.FirstOrDefault();
+            if (selected is null)
+                throw new InvalidOperationException(
+                    "Windows has no installed compatible legacy speech recognizer. " +
+                    "Install a speech recognition language for Windows, or use " +
+                    "Windows voice typing with Win+H as an alternative.");
+
+            engine = new SpeechRecognitionEngine(selected);
+            engine.LoadGrammar(new DictationGrammar());
+            engine.SetInputToDefaultAudioDevice();
+            var activeEngine = engine;
+            engine.SpeechRecognized += (_, e) =>
+            {
+                if (e.Result is null || e.Result.Confidence < 0.3f ||
+                    string.IsNullOrWhiteSpace(e.Result.Text))
+                    return;
+                var phrase = e.Result.Text;
+                if (!IsDisposed && IsHandleCreated)
+                {
+                    try
+                    {
+                        BeginInvoke(new Action(() =>
+                        {
+                            if (_dictationEngine != activeEngine ||
+                                _dictationStopping || target.IsDisposed ||
+                                target.ReadOnly) return;
+                            InsertDictatedText(target, phrase);
+                        }));
+                    }
+                    catch (InvalidOperationException)
+                    {
+                        // Form is shutting down. Never modify a disposed field.
+                    }
+                }
+            };
+            engine.RecognizeCompleted += (_, e) =>
+            {
+                if (!IsDisposed && IsHandleCreated)
+                {
+                    try
+                    {
+                        BeginInvoke(new Action(() =>
+                        {
+                            var unexpectedError = e.Error;
+                            FinishDictation(activeEngine);
+                            if (unexpectedError is not null && !IsDisposed)
+                                _status.Text =
+                                    "Dictation stopped: " + unexpectedError.Message;
+                        }));
+                    }
+                    catch (InvalidOperationException)
+                    {
+                        // The form may have closed before completion arrived.
+                    }
+                }
+            };
+
+            _dictationTarget = target;
+            _dictationEngine = engine;
+            _dictationStopping = false;
+            engine.RecognizeAsync(RecognizeMode.Multiple);
+            target.Focus();
+            _status.Text = $"Microphone listening ({selected.Culture.Name}). " +
+                           "Right-click a text field and choose Stop dictation.";
+        }
+        catch (Exception ex)
+        {
+            if (ReferenceEquals(_dictationEngine, engine))
+                _dictationEngine = null;
+            _dictationTarget = null;
+            _dictationStopping = false;
+            engine?.Dispose();
+            MessageBox.Show(
+                "Could not start dictation.\n\n" + ex.Message +
+                "\n\nCheck the default microphone, Windows microphone " +
+                "privacy settings, and installed recognition language. " +
+                "Windows voice typing (Win+H) is another option.",
+                "Dictation unavailable", MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+        }
+    }
+
+    private static void InsertDictatedText(TextBoxBase target, string phrase)
+    {
+        if (target.IsDisposed || phrase.Length == 0) return;
+        // Insert at the caret; don't erase what was already written.
+        var position = target.SelectionStart;
+        var preceding = position > 0 ? target.Text[position - 1] : (char?)null;
+        var prefix = preceding is null || char.IsWhiteSpace(preceding.Value) ||
+                     preceding.Value is '(' or '[' or '\n' ? "" : " ";
+        target.SelectedText = prefix + phrase + " ";
+    }
+
+    private void StopDictation()
+    {
+        if (_dictationEngine is not { } engine || _dictationStopping) return;
+        _dictationStopping = true;
+        _status.Text = "Stopping microphone dictation...";
+        try
+        {
+            // Cancel immediately; RecognizeCompleted handles final disposal.
+            engine.RecognizeAsyncCancel();
+        }
+        catch (Exception)
+        {
+            FinishDictation(engine);
+        }
+    }
+
+    private void FinishDictation(SpeechRecognitionEngine engine)
+    {
+        if (!ReferenceEquals(engine, _dictationEngine)) return;
+        _dictationEngine = null;
+        _dictationTarget = null;
+        _dictationStopping = false;
+        engine.Dispose();
+        if (!IsDisposed)
+            _status.Text = "Dictation stopped. Text remains editable and unsaved.";
+    }
+
+    private void DisposeDictation()
+    {
+        var engine = _dictationEngine;
+        _dictationEngine = null;
+        _dictationTarget = null;
+        _dictationStopping = false;
+        if (engine is null) return;
+        try { engine.RecognizeAsyncCancel(); }
+        catch (Exception) { /* Already stopped. */ }
+        engine.Dispose();
+    }
+}
