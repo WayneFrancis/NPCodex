@@ -56,6 +56,16 @@ try
     var worldInstalled = aliasesInstalled && await db.HasWorldEventsSchemaAsync();
     Console.WriteLine($"World event migration: {(worldInstalled ? "installed" : "NOT installed")}");
 
+    var conversationsBrowserInstalled = worldInstalled &&
+        await db.HasConversationBrowserSchemaAsync();
+    Console.WriteLine($"Conversation browser migration: " +
+        (conversationsBrowserInstalled ? "installed" : "NOT installed"));
+
+    var provenanceInstalled = conversationsBrowserInstalled &&
+        await db.HasMemoryProvenanceSchemaAsync();
+    Console.WriteLine($"Memory provenance migration: " +
+        (provenanceInstalled ? "installed" : "NOT installed"));
+
     if (!status.InitialMigrationInstalled || status.PgvectorVersion == "not installed")
     {
         Console.Error.WriteLine(
