@@ -13,7 +13,8 @@ public sealed partial class MainForm
     };
     private readonly TreeView _campaignTree = new()
     {
-        Dock = DockStyle.Fill, HideSelection = false, ShowNodeToolTips = true
+        Dock = DockStyle.Fill, HideSelection = false, ShowNodeToolTips = true,
+        AllowDrop = true
     };
     private readonly ListBox _conversationRoster = new()
     {
@@ -48,6 +49,7 @@ public sealed partial class MainForm
     private bool _updatingCast;
     private bool _updatingTree;
     private TreeNode? _contextLocationNode;
+    private readonly object _unassignedNodeTag = new();
 
     private long? ReplyCharacterId => (_answering.SelectedItem as CharacterChoice)?.Id;
     private bool ReplyAll => (_answering.SelectedItem as CharacterChoice)?.Name == "(All)";
@@ -240,107 +242,187 @@ public sealed partial class MainForm
 
     private void PopulateLocationTree()
     {
+        // Build parents and children in two phases. Previously Sort() on a
+        // partially built TreeView sometimes hid root/Unassigned nodes until
+        // filtering. This version never sorts an already-populated tree.
         var filter = _treeFilter.Text.Trim();
-        var selected = (_campaignTree.SelectedNode?.Tag as CharacterInfo)?.Id;
+        var selectedTag = _campaignTree.SelectedNode?.Tag;
+        var expandedLocations = new HashSet<long>();
+        foreach (TreeNode root in _campaignTree.Nodes)
+            CaptureExpanded(root);
+
+        void CaptureExpanded(TreeNode node)
+        {
+            if (node.IsExpanded && node.Tag is LocationInfo location)
+                expandedLocations.Add(location.Id);
+            foreach (TreeNode child in node.Nodes) CaptureExpanded(child);
+        }
+
+        var locations = _campaignLocations.ToDictionary(l => l.Id);
+        bool Matches(string? value) =>
+            filter.Length == 0 ||
+            (!string.IsNullOrEmpty(value) &&
+             value.Contains(filter, StringComparison.OrdinalIgnoreCase));
+
+        var directMatches = _campaignLocations
+            .Where(l => Matches(l.Name) || Matches(l.Type))
+            .Select(l => l.Id).ToHashSet();
+
+        // If the filter matches a district or building, show its descendants.
+        var included = new HashSet<long>(directMatches);
+        var childrenByParent = _campaignLocations
+            .Where(l => l.ParentLocationId is not null)
+            .GroupBy(l => l.ParentLocationId!.Value)
+            .ToDictionary(g => g.Key, g => g.ToArray());
+        var queue = new Queue<long>(directMatches);
+        while (queue.Count > 0)
+        {
+            var parent = queue.Dequeue();
+            if (!childrenByParent.TryGetValue(parent, out var children)) continue;
+            foreach (var child in children)
+                if (included.Add(child.Id)) queue.Enqueue(child.Id);
+        }
+
+        var matchedCharacters = _campaignCharacters.Where(c =>
+            Matches(c.Name) || Matches(c.Occupation) ||
+            _treeAliases.Any(a => a.CharacterId == c.Id && Matches(a.Alias)) ||
+            (c.CurrentLocationId is long id && included.Contains(id)))
+            .ToArray();
+
+        void IncludeAncestors(long id)
+        {
+            var visited = new HashSet<long>();
+            while (locations.TryGetValue(id, out var current) && visited.Add(id))
+            {
+                included.Add(id);
+                if (current.ParentLocationId is not long parentId) break;
+                id = parentId;
+            }
+        }
+        foreach (var id in included.ToArray()) IncludeAncestors(id);
+        foreach (var c in matchedCharacters)
+            if (c.CurrentLocationId is long id) IncludeAncestors(id);
+
         _updatingTree = true;
         try
         {
             _campaignTree.BeginUpdate();
             _campaignTree.Nodes.Clear();
-            var locations = _campaignLocations.ToDictionary(l => l.Id);
-            var children = new Dictionary<long, TreeNode>();
-            bool Matches(string s) =>
-                filter.Length == 0 || s.Contains(filter, StringComparison.OrdinalIgnoreCase);
-            var matchedCharacters = _campaignCharacters
-                .Where(c => Matches(c.Name) ||
-                            (c.Occupation is not null && Matches(c.Occupation)) ||
-                            _treeAliases.Any(a => a.CharacterId == c.Id && Matches(a.Alias)) ||
-                            LocationAncestorsMatch(c.CurrentLocationId))
-                .ToArray();
-
-            bool LocationAncestorsMatch(long? locationId)
-            {
-                var seen = new HashSet<long>();
-                while (locationId is long id && locations.TryGetValue(id, out var location)
-                       && seen.Add(id))
+            var nodes = new Dictionary<long, TreeNode>();
+            foreach (var loc in _campaignLocations.Where(l => included.Contains(l.Id)))
+                nodes[loc.Id] = new TreeNode(loc.Name)
                 {
-                    if (Matches(location.Name)) return true;
-                    locationId = location.ParentLocationId;
-                }
-                return false;
-            }
-
-            var visibleLocations = new HashSet<long>();
-            foreach (var loc in _campaignLocations.Where(l => Matches(l.Name)))
-                AddAncestors(loc.Id);
-            foreach (var person in matchedCharacters)
-                if (person.CurrentLocationId is long locationId)
-                    AddAncestors(locationId);
-
-            void AddAncestors(long locationId)
-            {
-                var guard = new HashSet<long>();
-                while (locations.TryGetValue(locationId, out var loc) && guard.Add(locationId))
-                {
-                    visibleLocations.Add(locationId);
-                    if (loc.ParentLocationId is not long parentId) break;
-                    locationId = parentId;
-                }
-            }
-
-            TreeNode EnsureLocation(long id, HashSet<long>? visited = null)
-            {
-                if (children.TryGetValue(id, out var existing)) return existing;
-                var loc = locations[id];
-                var node = new TreeNode(loc.Name)
-                {
-                    Tag = loc, ToolTipText = loc.Type, ImageIndex = -1
+                    Tag = loc, ToolTipText = loc.Type
                 };
-                children[id] = node;
-                visited ??= [];
-                if (loc.ParentLocationId is long parent &&
-                    visibleLocations.Contains(parent) && locations.ContainsKey(parent) &&
-                    visited.Add(id) && !visited.Contains(parent))
-                    EnsureLocation(parent, visited).Nodes.Add(node);
-                else
-                    _campaignTree.Nodes.Add(node);
-                return node;
-            }
-            foreach (var loc in _campaignLocations.Where(l => visibleLocations.Contains(l.Id))
-                                                  .OrderBy(l => l.Name))
-                EnsureLocation(loc.Id);
 
-            TreeNode? unplaced = null;
-            foreach (var person in matchedCharacters.OrderBy(c => c.Name))
+            foreach (var loc in _campaignLocations.Where(l => nodes.ContainsKey(l.Id))
+                         .OrderBy(l => l.Name, StringComparer.CurrentCultureIgnoreCase))
             {
-                var title = person.Name +
-                    (string.IsNullOrWhiteSpace(person.Occupation)
-                        ? "" : $" ({person.Occupation})");
-                var node = new TreeNode(title) { Tag = person, ToolTipText = person.Type.ToUpperInvariant() };
-                if (person.CurrentLocationId is long locId &&
-                    children.TryGetValue(locId, out var parent))
+                var node = nodes[loc.Id];
+                if (loc.ParentLocationId is long parentId &&
+                    nodes.TryGetValue(parentId, out var parent) &&
+                    !WouldMakeTreeCycle(loc.Id, parentId, locations))
                     parent.Nodes.Add(node);
                 else
-                {
-                    if (unplaced is null)
-                    {
-                        unplaced = new TreeNode("Unassigned location");
-                        _campaignTree.Nodes.Add(unplaced);
-                    }
-                    unplaced.Nodes.Add(node);
-                }
-                if (person.Id == selected) _campaignTree.SelectedNode = node;
+                    _campaignTree.Nodes.Add(node);
             }
-            _campaignTree.Sort();
-            if (filter.Length > 0) _campaignTree.ExpandAll();
+
+            bool WouldMakeTreeCycle(
+                long childId, long parentId, Dictionary<long, LocationInfo> index)
+            {
+                var checkedParents = new HashSet<long>();
+                while (checkedParents.Add(parentId) &&
+                       index.TryGetValue(parentId, out var current))
+                {
+                    if (childId == parentId) return true;
+                    if (current.ParentLocationId is not long next) return false;
+                    parentId = next;
+                }
+                return true;
+            }
+
+            // This node always exists, even when no characters are unassigned.
+            var unassigned = new TreeNode("Unassigned")
+            {
+                Tag = _unassignedNodeTag,
+                ToolTipText = "Drop characters here to clear their current location."
+            };
+            _campaignTree.Nodes.Add(unassigned);
+
+            foreach (var character in matchedCharacters
+                         .OrderBy(c => c.Name, StringComparer.CurrentCultureIgnoreCase))
+            {
+                var title = character.Name +
+                    (string.IsNullOrWhiteSpace(character.Occupation)
+                        ? "" : $" ({character.Occupation})");
+                var node = new TreeNode(title)
+                {
+                    Tag = character, ToolTipText = character.Type.ToUpperInvariant()
+                };
+                if (character.CurrentLocationId is long locId &&
+                    nodes.TryGetValue(locId, out var parent))
+                    parent.Nodes.Add(node);
+                else
+                    unassigned.Nodes.Add(node);
+            }
+
+            if (filter.Length > 0)
+                _campaignTree.ExpandAll();
             else
-                foreach (TreeNode node in _campaignTree.Nodes) node.Expand();
+            {
+                foreach (TreeNode root in _campaignTree.Nodes)
+                    root.Expand();
+                foreach (var id in expandedLocations)
+                    if (nodes.TryGetValue(id, out var node)) node.Expand();
+                unassigned.Expand();
+            }
+
+            TreeNode? toSelect = null;
+            if (selectedTag is CharacterInfo selectedCharacter)
+                toSelect = FindTreeNode(n => n.Tag is CharacterInfo c &&
+                                            c.Id == selectedCharacter.Id);
+            else if (selectedTag is LocationInfo selectedLocation)
+                toSelect = FindTreeNode(n => n.Tag is LocationInfo l &&
+                                            l.Id == selectedLocation.Id);
+            else if (ReferenceEquals(selectedTag, _unassignedNodeTag))
+                toSelect = unassigned;
+            if (toSelect is not null)
+                _campaignTree.SelectedNode = toSelect;
         }
         finally
         {
             _campaignTree.EndUpdate();
             _updatingTree = false;
         }
+    }
+
+    private TreeNode? FindTreeNode(Func<TreeNode, bool> predicate)
+    {
+        TreeNode? Walk(TreeNodeCollection nodes)
+        {
+            foreach (TreeNode node in nodes)
+            {
+                if (predicate(node)) return node;
+                var nested = Walk(node.Nodes);
+                if (nested is not null) return nested;
+            }
+            return null;
+        }
+        return Walk(_campaignTree.Nodes);
+    }
+
+    private void SelectTreeLocation(long locationId)
+    {
+        var node = FindTreeNode(n => n.Tag is LocationInfo l && l.Id == locationId);
+        if (node is null) return;
+        var previous = _updatingTree;
+        _updatingTree = true;
+        try
+        {
+            _campaignTree.SelectedNode = node;
+            node.EnsureVisible();
+        }
+        finally { _updatingTree = previous; }
     }
 
     private async Task AddChildLocationAsync(long? parentId)
