@@ -86,7 +86,8 @@ public sealed class NpcDialogueService
         var memories = await _memoryService.SearchAsync(
             campaignId, npcId, playerSays, maxResults: 5,
             cancellationToken: cancellationToken, includeSecretMemories: false,
-            currentWorldDay: currentMoment?.Day);
+            currentWorldDay: currentMoment?.Day,
+            currentWorldTime: currentMoment?.Time);
 
         var personality = await _database.GetNpcPersonalityAsync(
             campaignId, npcId, cancellationToken);
