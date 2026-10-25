@@ -1138,3 +1138,90 @@ This implementation is committed but still needs a Windows build and
 microphone test. In particular, confirm that right-click → start,
 speaking a phrase, right-click → stop, and starting again in another
 field work as expected before trusting it for long session notes.
+
+
+## History filter-row, search-tab and dictation diagnostics follow-up
+
+**No migration** is required for this update.
+
+```powershell
+cd D:\dev\NPCodex
+git pull --ff-only
+dotnet build NPCodex.slnx
+dotnet run --project src/NPCodex.Desktop
+```
+
+### Conversation history
+
+The **Conversation History** grids now display a filter row immediately
+**under the column headers**, much like a DevExpress grid. Enter a partial
+phrase in any filter cell to filter the currently loaded statements
+case-insensitively as you type. Filters in multiple columns are combined
+(AND). Clear a filter cell to remove just that restriction. Click a column
+header to sort the data; the date column uses a hidden chronological sort
+value so Day 10 follows Day 9. Filters operate on the statements already
+loaded into that tab, rather than making a new database query.
+
+The permanent **Conversation members** tab displays lines spoken or heard by
+any member of the current conversation roster. New **search-result tabs**
+show statements matching the campaign-wide search query. A **Close selected
+search tab** button, a right-click **Close this search tab** menu, and
+double-click or middle-click on a search-tab header all close that tab
+without deleting stored statements. The Conversation members tab cannot be
+closed.
+
+In both grids the **Characters hearing it** column now includes the
+speaker as well as the other characters recorded as listeners; this is a
+display convention meaning all participants who know what was said.
+It does not insert the speaker into the `statement_hearers` database table
+or alter recorded witnesses. Private/whispered lines still exclude
+uninvolved roster members.
+
+A campaign begins with an **empty** Characters Present conversation list.
+Double-click characters in the location tree while on the Dialogue tab
+to add them. Refresh preserves the currently chosen roster, while
+switching campaigns starts a new, empty roster.
+
+### Literal search versus semantic search
+
+The individual `conversation_statements.content` values are presently
+stored as PostgreSQL text and searched using
+`to_tsvector('simple', content)` and a substring fallback.
+The displayed relevance scores are **lexical full-text ranks**, not
+embedding similarity. NPC `memories` already have 768-dimensional pgvector
+embeddings via the local Ollama `nomic-embed-text` model. Semantic
+statement search is a future extension: it needs a vector column on
+approved statements, an embedding/backfill workflow and a search mode using
+query-to-statement vector similarity, with campaign access restrictions.
+Do not assume searches for synonyms will work until this is implemented.
+
+### Windows dictation troubleshooting
+
+With the `System.Speech` dictation context menu, right-click an editable
+text box and use **Speech recognizer diagnostics...** to see installed
+compatible legacy recognizers and their languages. A working microphone in
+Sound Recorder does not guarantee that the older `System.Speech` API can
+recognise speech. On recent Windows 11 builds, the older Windows Speech
+Recognition product was superseded by **Voice access**.
+
+**Start dictation (microphone)** now provides more detailed status:
+listening recognizer name/language, speech detected, speech rejected,
+audio-signal problems, and successfully recognised words. Use the status
+line to tell whether audio is being heard by the recognizer. Only
+recognised words are inserted into the targeted field, and no text is
+saved until you use the usual Save/Approve controls. Stop dictation with
+the text-field context menu.
+
+The context menu also offers **Windows voice typing (Win+H)...**: it
+focuses the selected text box and explains how to invoke Windows' separate
+voice-typing UI with Windows+H. This is a fallback and does not imply
+that the app controls Windows voice typing internally. This separate
+Windows service may have different online and privacy requirements from
+the local `System.Speech` recognizer. A local Whisper-based engine could
+be added later behind the same menu.
+
+After testing, report whether **Speech recognizer diagnostics** lists
+recognizers; whether the status says **Speech detected**, **Speech
+rejected**, or **microphone audio problem**; and whether Windows+H can
+dictate into that same NPCodex text box. Those distinguish an unavailable
+recognizer from a microphone-routing or recognition-quality problem.
