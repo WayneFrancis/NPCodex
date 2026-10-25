@@ -717,9 +717,10 @@ In DBeaver, execute the **whole** migration
 [`database/migrations/0005_world_events.sql`](database/migrations/0005_world_events.sql)
 **once** against your existing `npcodex` PostgreSQL database. It adds
 `world_day` and `world_time` to interactions and memories, and
-`speaker_character_id` to conversation turns. It **does not create new tables
-or backdate existing history**. Existing undated interactions and memories
-remain dated *unknown*. The application checks for this migration at launch.
+`speaker_character_id` to conversation turns. It **does not create new tables**. Where an older interaction already
+has an explicit `campaign_day`, that existing day number is carried into
+`world_day`, including linked memories; no time of day is invented.
+Other undated interactions and memories remain dated *unknown*. The application checks for this migration at launch.
 
 ```sql
 SELECT version FROM schema_migrations ORDER BY version;
@@ -810,8 +811,9 @@ Semantic retrieval includes the memory's fictional day and time, and
 excludes memories dated **after** the current fictional moment.
 Qwen receives those dates and is instructed not to invent phrases like
 "two weeks ago" when a memory is undated or when the day arithmetic does
-not justify that elapsed time. Previously recorded interactions keep their
-unknown historical dates. Fictional day numbers are system-neutral; support
+not justify that elapsed time. Previously recorded interactions without an explicit
+campaign day keep their unknown historical dates; earlier known campaign
+days are reused without inventing a time of day. Fictional day numbers are system-neutral; support
 for individual RPG calendars (e.g., named months) can be added on top of
 the stored chronology.
 
