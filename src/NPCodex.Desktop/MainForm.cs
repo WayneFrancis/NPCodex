@@ -338,6 +338,9 @@ public sealed partial class MainForm : Form
         if (!await _database.HasMemoryProvenanceSchemaAsync())
             throw new InvalidOperationException(
                 "Apply database migration 0007_memory_provenance.sql in DBeaver.");
+        if (!await _database.HasConversationMaintenanceSchemaAsync())
+            throw new InvalidOperationException(
+                "Apply database migration 0008_conversation_maintenance.sql in DBeaver.");
         var previousId = CampaignId;
         var campaigns = await _database.GetCampaignsAsync();
         _ignoreSelectionEvents = true;
@@ -856,6 +859,7 @@ public sealed partial class MainForm : Form
             _removeRosterMember.Enabled = _privateExchange.Enabled =
             _sheetSave.Enabled = _statementSearch.Enabled =
             _searchStatements.Enabled = _refreshStatements.Enabled =
+            _statementSearchMode.Enabled = _embedStatements.Enabled =
             _memoryWorldDay.Enabled = _memoryWorldTime.Enabled =
             _addPcButton.Enabled = _addRootLocation.Enabled =
             _saveLocation.Enabled = _deleteLocation.Enabled =
@@ -901,6 +905,7 @@ public sealed partial class MainForm : Form
             _removeRosterMember.Enabled = _privateExchange.Enabled =
             _sheetSave.Enabled = _statementSearch.Enabled =
             _searchStatements.Enabled = _refreshStatements.Enabled =
+            _statementSearchMode.Enabled = _embedStatements.Enabled =
             _memoryWorldDay.Enabled = _memoryWorldTime.Enabled =
             _addPcButton.Enabled = _addRootLocation.Enabled = true;
             _saveLocation.Enabled = _deleteLocation.Enabled = _editLocationId is not null;
