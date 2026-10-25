@@ -75,6 +75,7 @@ public sealed partial class MainForm
         refresh.Click += async (_, _) => await RunBusyAsync(LoadCampaignsAsync);
         buttons.Controls.Add(refresh);
         buttons.Controls.Add(_addNpcButton);
+        buttons.Controls.Add(_addPcButton);
         layout.Controls.Add(buttons, 0, 4);
 
         var menu = new ContextMenuStrip();
@@ -91,7 +92,15 @@ public sealed partial class MainForm
             await AddChildLocationAsync(
                 _contextLocationNode?.Tag is LocationInfo l ? l.Id : null);
         });
+        var addPc = new ToolStripMenuItem("Add PC here");
+        addPc.Click += async (_, _) => await RunBusyAsync(async () =>
+        {
+            var locationId = _contextLocationNode?.Tag is LocationInfo l ? l.Id :
+                _contextLocationNode?.Tag is CharacterInfo c ? c.CurrentLocationId : null;
+            await AddPcAsync(locationId);
+        });
         menu.Items.Add(addNpc);
+        menu.Items.Add(addPc);
         menu.Items.Add(addLocation);
         _campaignTree.ContextMenuStrip = menu;
         _campaignTree.NodeMouseClick += (_, e) =>
