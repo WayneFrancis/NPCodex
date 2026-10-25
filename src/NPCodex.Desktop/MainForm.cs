@@ -536,10 +536,35 @@ public sealed partial class MainForm : Form
 
     private async Task GenerateAsync()
     {
-        if (CampaignId is not long campaignId || NpcId is not long npcId)
-            throw new InvalidOperationException("Select an NPC first.");
+        if (CampaignId is not long campaignId || PlayerId is not long askingId)
+            throw new InvalidOperationException("Choose an initiating character from the roster.");
         if (string.IsNullOrWhiteSpace(_playerLine.Text))
-            throw new InvalidOperationException("Enter the player's words first.");
+            throw new InvalidOperationException("Enter what the initiating character says.");
+
+        long npcId;
+        if (ReplyAll)
+        {
+            var candidates = _rosterIds
+                .Where(id => id != askingId &&
+                    _campaignCharacters.Any(c => c.Id == id && c.Type == "npc"))
+                .ToArray();
+            npcId = await _dialogueService.ChooseReplyingNpcAsync(
+                campaignId, askingId, candidates, _playerLine.Text);
+            _updatingCast = true;
+            try
+            {
+                _answering.SelectedItem = _answering.Items.Cast<CharacterChoice>()
+                    .First(c => c.Id == npcId);
+            }
+            finally { _updatingCast = false; }
+            UpdateRecipientOptions();
+            await LoadConversationAsync();
+        }
+        else if (ReplyCharacterId is long selectedId && SelectedResponderIsNpc)
+            npcId = selectedId;
+        else
+            throw new InvalidOperationException(
+                "A player-character response is written manually. Select an NPC to generate replies.");
 
         ResetSuggestions();
         _status.Text = "Generating three reply candidates using local Ollama...";
@@ -637,18 +662,25 @@ public sealed partial class MainForm : Form
 
     private async Task ApproveAsync()
     {
-        if (CampaignId is not long campaignId || NpcId is not long npcId)
-            throw new InvalidOperationException("Select an NPC first.");
+        if (CampaignId is not long campaignId ||
+            ReplyCharacterId is not long replyingId ||
+            PlayerId is not long initiatingId)
+            throw new InvalidOperationException(
+                "Select two distinct characters from the conversation roster.");
+        if (replyingId == initiatingId)
+            throw new InvalidOperationException("The two speakers must be different.");
         var reply = SelectedResponse();
         if (string.IsNullOrWhiteSpace(_playerLine.Text) || string.IsNullOrWhiteSpace(reply))
             throw new InvalidOperationException("Enter player dialogue and choose or write a non-empty NPC response.");
 
-        var withMemory = _createMemoryOnApproval.Checked;
+        var withMemory = SelectedResponderIsNpc && _createMemoryOnApproval.Checked;
         if (withMemory && string.IsNullOrWhiteSpace(_newMemory.Text))
             throw new InvalidOperationException("Write the memory or uncheck the memory option.");
 
         var recipients = _giveListenerMemories.Checked
-            ? MemoryRecipientIds() : Array.Empty<long>();
+            ? MemoryRecipientIds().Where(id =>
+                !_privateExchange.Checked || id == initiatingId).ToArray()
+            : Array.Empty<long>();
         var notice =
             $"Approve dialogue on {CurrentWorldMoment}? " +
             (withMemory ? "Create the responding NPC's written memory. " :
@@ -661,22 +693,27 @@ public sealed partial class MainForm : Form
             return;
 
         var result = await _database.RecordApprovedSceneAsync(
-            campaignId, npcId, PlayerId, _playerLine.Text, reply,
+            campaignId, replyingId, initiatingId, _playerLine.Text, reply,
             CurrentWorldMoment, withMemory ? _newMemory.Text : null,
             (short)_newMemoryImportance.Value, _newMemorySecret.Checked,
-            _activeConversationId, recipients);
+            _activeConversationId, recipients,
+            presentCharacters: _rosterIds, isPrivate: _privateExchange.Checked);
 
         var embeddedCount = 0;
         foreach (var memoryId in result.AllMemoryIds)
             if (await EmbedSavedMemoryAsync(campaignId, memoryId))
                 embeddedCount++;
 
-        await LoadMemoriesAsync(result.ReplyNpcMemoryId);
+        if (NpcId == replyingId)
+            await LoadMemoriesAsync(result.ReplyNpcMemoryId);
         await LoadConversationAsync();
+        await LoadRosterHistoryAsync();
+        await RefreshSavedSearchesAsync();
         _playerLine.Clear();
         _manualReply.Clear();
         _newMemory.Clear();
         _createMemoryOnApproval.Checked = false;
+        _privateExchange.Checked = false;
         ResetSuggestions();
         _status.Text =
             $"Interaction #{result.InteractionId} approved on {CurrentWorldMoment}; " +
@@ -745,7 +782,12 @@ public sealed partial class MainForm : Form
             _aliasAdd.Enabled = _aliasDelete.Enabled =
             _worldDay.Enabled = _worldTime.Enabled = _sceneTopic.Enabled =
             _memoryRecipients.Enabled = _giveListenerMemories.Enabled =
-            _memoryUseWorldDate.Enabled = false;
+            _memoryUseWorldDate.Enabled = _campaignTree.Enabled =
+            _treeFilter.Enabled = _conversationRoster.Enabled =
+            _asking.Enabled = _answering.Enabled =
+            _removeRosterMember.Enabled = _privateExchange.Enabled =
+            _sheetSave.Enabled = _statementSearch.Enabled =
+            _searchStatements.Enabled = _refreshStatements.Enabled = false;
         UseWaitCursor = true;
         try { await operation(); }
         catch (Exception ex)
@@ -757,8 +799,11 @@ public sealed partial class MainForm : Form
         {
             UseWaitCursor = false;
             _busy = false;
-            _generate.Enabled = _approve.Enabled = _saveMemory.Enabled =
-                _deleteMemory.Enabled = _campaigns.Enabled = _npcs.Enabled = true;
+            _generate.Enabled = SelectedResponderIsNpc || ReplyAll;
+            _approve.Enabled = ReplyCharacterId is not null &&
+                PlayerId is not null && ReplyCharacterId != PlayerId;
+            _saveMemory.Enabled = _deleteMemory.Enabled =
+                _campaigns.Enabled = _npcs.Enabled = true;
             _saveProfile.Enabled = NpcId is not null;
             _addNpcButton.Enabled = CampaignId is not null;
             _saveAttitude.Enabled = NpcId is not null &&
@@ -773,8 +818,14 @@ public sealed partial class MainForm : Form
                 _aliasAdd.Enabled = _aliasDelete.Enabled =
             _worldDay.Enabled = _worldTime.Enabled = _sceneTopic.Enabled =
             _memoryRecipients.Enabled = _giveListenerMemories.Enabled =
-            _memoryUseWorldDate.Enabled = true;
+            _memoryUseWorldDate.Enabled = _campaignTree.Enabled =
+            _treeFilter.Enabled = _conversationRoster.Enabled =
+            _asking.Enabled = _answering.Enabled =
+            _removeRosterMember.Enabled = _privateExchange.Enabled =
+            _sheetSave.Enabled = _statementSearch.Enabled =
+            _searchStatements.Enabled = _refreshStatements.Enabled = true;
             _suggestNpcOpening.Enabled = CampaignId is not null;
+            _createMemoryOnApproval.Enabled = SelectedResponderIsNpc;
         }
     }
 
