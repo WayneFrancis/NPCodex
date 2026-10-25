@@ -44,6 +44,7 @@ public sealed partial class MainForm
     private long? _rosterCampaignId;
     private readonly List<long> _rosterIds = [];
     private IReadOnlyList<LocationInfo> _campaignLocations = Array.Empty<LocationInfo>();
+    private IReadOnlyList<CharacterAlias> _treeAliases = Array.Empty<CharacterAlias>();
     private bool _updatingCast;
     private bool _updatingTree;
     private TreeNode? _contextLocationNode;
@@ -106,9 +107,20 @@ public sealed partial class MainForm
                 _contextLocationNode?.Tag is CharacterInfo c ? c.CurrentLocationId : null;
             await AddPcAsync(locationId);
         });
+        var move = new ToolStripMenuItem("Move this character...");
+        move.Click += async (_, _) => await RunBusyAsync(async () =>
+        {
+            if (_contextLocationNode?.Tag is CharacterInfo character)
+                await MoveTreeCharacterAsync(character.Id);
+        });
         menu.Items.Add(addNpc);
         menu.Items.Add(addPc);
         menu.Items.Add(addLocation);
+        menu.Items.Add(move);
+        menu.Opening += (_, _) =>
+        {
+            move.Visible = _contextLocationNode?.Tag is CharacterInfo;
+        };
         _campaignTree.ContextMenuStrip = menu;
         _campaignTree.MouseDown += (_, e) =>
         {
@@ -236,6 +248,7 @@ public sealed partial class MainForm
             var matchedCharacters = _campaignCharacters
                 .Where(c => Matches(c.Name) ||
                             (c.Occupation is not null && Matches(c.Occupation)) ||
+                            _treeAliases.Any(a => a.CharacterId == c.Id && Matches(a.Alias)) ||
                             LocationAncestorsMatch(c.CurrentLocationId))
                 .ToArray();
 
@@ -352,6 +365,45 @@ public sealed partial class MainForm
             campaignId, name.Text, string.IsNullOrWhiteSpace(kind.Text)
                 ? "place" : kind.Text, parentId);
         await LoadCharactersAsync();
+    }
+
+    private async Task MoveTreeCharacterAsync(long characterId)
+    {
+        if (CampaignId is not long campaignId)
+            throw new InvalidOperationException("Select a campaign first.");
+        using var dialog = new Form
+        {
+            Text = "Move character to a location",
+            Size = new Size(495, 170),
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            StartPosition = FormStartPosition.CenterParent
+        };
+        var destination = new ComboBox
+        {
+            Left = 13, Top = 14, Width = 450,
+            DropDownStyle = ComboBoxStyle.DropDownList
+        };
+        destination.Items.Add(new CharacterChoice(null, "(Unassigned location)"));
+        foreach (var location in _campaignLocations.OrderBy(l => l.Name))
+            destination.Items.Add(new CharacterChoice(location.Id, location.Name));
+        var oldLocationId = _campaignCharacters
+            .FirstOrDefault(c => c.Id == characterId)?.CurrentLocationId;
+        destination.SelectedItem = destination.Items.Cast<CharacterChoice>()
+            .FirstOrDefault(c => c.Id == oldLocationId)
+            ?? destination.Items[0];
+        var ok = new Button
+        {
+            Text = "Move", Left = 370, Top = 58,
+            DialogResult = DialogResult.OK
+        };
+        dialog.Controls.AddRange([destination, ok]);
+        dialog.AcceptButton = ok;
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        await _database.MoveCharacterAsync(
+            campaignId, characterId,
+            (destination.SelectedItem as CharacterChoice)?.Id);
+        await LoadCharactersAsync();
+        _status.Text = "Character location updated in this campaign.";
     }
 
     private Control BuildConversationHeader()
