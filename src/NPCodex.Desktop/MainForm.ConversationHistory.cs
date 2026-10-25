@@ -1,4 +1,3 @@
-using System.Data;
 using System.Drawing;
 using System.Windows.Forms;
 using NPCodex.Data;
@@ -10,7 +9,7 @@ public sealed partial class MainForm
     private readonly TabControl _statementTabs = new() { Dock = DockStyle.Fill };
     private readonly TextBox _statementSearch = new()
     {
-        Width = 310, PlaceholderText = "Search all campaign dialogue: maps, sword, etc."
+        Width = 310, PlaceholderText = "Search approved statements (literal words)..."
     };
     private readonly Button _searchStatements = new()
     {
@@ -20,8 +19,12 @@ public sealed partial class MainForm
     {
         Text = "Refresh history", AutoSize = true
     };
+    private readonly Button _closeSearchTab = new()
+    {
+        Text = "Close selected search tab", AutoSize = true, Enabled = false
+    };
     private readonly TabPage _rosterHistoryTab = new("Conversation members");
-    private readonly DataGridView _rosterGrid = MakeStatementGrid();
+    private readonly StatementHistoryGrid _rosterGrid = new(showRelevance: false);
     private readonly Dictionary<TabPage, string> _savedSearches = [];
 
     private Control BuildConversationHistoryArea()
@@ -30,20 +33,33 @@ public sealed partial class MainForm
         {
             Dock = DockStyle.Fill, RowCount = 2, ColumnCount = 1
         };
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 39));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 45));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         var searchBar = new FlowLayoutPanel { Dock = DockStyle.Fill };
         searchBar.Controls.Add(_statementSearch);
         searchBar.Controls.Add(_searchStatements);
         searchBar.Controls.Add(_refreshStatements);
-        searchBar.Controls.Add(new Label
-        {
-            Text = "Click headers to sort; right-click a header to filter its column",
-            AutoSize = true, Padding = new Padding(9, 8, 0, 0)
-        });
+        searchBar.Controls.Add(_closeSearchTab);
         layout.Controls.Add(searchBar, 0, 0);
+
         _rosterHistoryTab.Controls.Add(_rosterGrid);
         _statementTabs.TabPages.Add(_rosterHistoryTab);
+        _statementTabs.SelectedIndexChanged += (_, _) =>
+            _closeSearchTab.Enabled = _statementTabs.SelectedTab != _rosterHistoryTab;
+        var tabMenu = new ContextMenuStrip();
+        var closeMenu = new ToolStripMenuItem("Close this search tab");
+        closeMenu.Click += (_, _) =>
+        {
+            if (_statementTabs.SelectedTab is { } selected)
+                CloseSearchTab(selected);
+        };
+        tabMenu.Items.Add(closeMenu);
+        tabMenu.Opening += (_, e) =>
+        {
+            closeMenu.Enabled = _statementTabs.SelectedTab != _rosterHistoryTab;
+            if (!closeMenu.Enabled) e.Cancel = true;
+        };
+        _statementTabs.ContextMenuStrip = tabMenu;
         layout.Controls.Add(_statementTabs, 0, 1);
         return layout;
     }
@@ -64,30 +80,60 @@ public sealed partial class MainForm
             await LoadRosterHistoryAsync();
             await RefreshSavedSearchesAsync();
         });
+        _closeSearchTab.Click += (_, _) =>
+        {
+            if (_statementTabs.SelectedTab is { } current)
+                CloseSearchTab(current);
+        };
+        _statementTabs.MouseDown += (_, e) =>
+        {
+            if (e.Button != MouseButtons.Right) return;
+            // Context menu acts on the tab clicked, not the previously selected tab.
+            for (var i = 0; i < _statementTabs.TabCount; i++)
+                if (_statementTabs.GetTabRect(i).Contains(e.Location))
+                {
+                    _statementTabs.SelectedIndex = i;
+                    return;
+                }
+        };
         _statementTabs.MouseDoubleClick += (_, e) =>
         {
-            // Double-click a result tab to close it; the roster tab is permanent.
             for (var i = 1; i < _statementTabs.TabCount; i++)
-            {
-                if (!_statementTabs.GetTabRect(i).Contains(e.Location)) continue;
-                var tab = _statementTabs.TabPages[i];
-                _savedSearches.Remove(tab);
-                _statementTabs.TabPages.Remove(tab);
-                tab.Dispose();
-                return;
-            }
+                if (_statementTabs.GetTabRect(i).Contains(e.Location))
+                {
+                    CloseSearchTab(_statementTabs.TabPages[i]);
+                    return;
+                }
         };
+        _statementTabs.MouseUp += (_, e) =>
+        {
+            if (e.Button != MouseButtons.Middle) return;
+            for (var i = 1; i < _statementTabs.TabCount; i++)
+                if (_statementTabs.GetTabRect(i).Contains(e.Location))
+                {
+                    CloseSearchTab(_statementTabs.TabPages[i]);
+                    return;
+                }
+        };
+    }
+
+    private void CloseSearchTab(TabPage tab)
+    {
+        if (tab == _rosterHistoryTab || !_savedSearches.Remove(tab)) return;
+        _statementTabs.TabPages.Remove(tab);
+        tab.Dispose();
+        _closeSearchTab.Enabled = _statementTabs.SelectedTab != _rosterHistoryTab;
     }
 
     private async Task LoadRosterHistoryAsync()
     {
         if (CampaignId is not long campaignId)
         {
-            _rosterGrid.DataSource = null;
+            _rosterGrid.LoadStatements(Array.Empty<StatementInfo>());
             return;
         }
         var lines = await _database.GetStatementsAsync(campaignId, _rosterIds);
-        SetGridData(_rosterGrid, lines, false);
+        _rosterGrid.LoadStatements(lines);
         _rosterHistoryTab.Text = $"Conversation members ({lines.Count})";
     }
 
@@ -104,14 +150,16 @@ public sealed partial class MainForm
         var result = await _database.GetStatementsAsync(campaignId, _rosterIds, query);
         var title = query.Length > 23 ? query[..23] + "…" : query;
         var tab = new TabPage($"{title} ({result.Count})");
-        var grid = MakeStatementGrid();
+        var grid = new StatementHistoryGrid(showRelevance: true);
         tab.Controls.Add(grid);
-        SetGridData(grid, result, true);
+        grid.LoadStatements(result);
         _statementTabs.TabPages.Add(tab);
         _savedSearches.Add(tab, query);
         _statementTabs.SelectedTab = tab;
-        _status.Text = $"Found {result.Count} approved statements for '{query}'. " +
-                       "Double-click the search tab to close it.";
+        _status.Text =
+            $"Found {result.Count} statements for '{query}'. " +
+            "Type in the filter row below any heading to narrow the grid. " +
+            "Select Close search tab to remove a result view.";
     }
 
     private async Task RefreshSavedSearchesAsync()
@@ -119,95 +167,12 @@ public sealed partial class MainForm
         if (CampaignId is not long campaignId) return;
         foreach (var entry in _savedSearches.ToArray())
         {
-            if (entry.Key.Controls.OfType<DataGridView>().FirstOrDefault() is not { } grid)
+            if (entry.Key.Controls.OfType<StatementHistoryGrid>()
+                    .FirstOrDefault() is not { } grid)
                 continue;
             var found = await _database.GetStatementsAsync(
                 campaignId, _rosterIds, entry.Value);
-            SetGridData(grid, found, true);
-        }
-    }
-
-    private static DataGridView MakeStatementGrid()
-    {
-        var grid = new DataGridView
-        {
-            Dock = DockStyle.Fill,
-            ReadOnly = true,
-            AllowUserToAddRows = false,
-            AllowUserToDeleteRows = false,
-            AutoGenerateColumns = true,
-            AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
-            RowHeadersVisible = false,
-            SelectionMode = DataGridViewSelectionMode.FullRowSelect,
-            MultiSelect = false
-        };
-        grid.ColumnHeaderMouseClick += (_, e) =>
-        {
-            if (e.Button != MouseButtons.Right || e.ColumnIndex < 0 ||
-                grid.DataSource is not DataTable table)
-                return;
-            var column = table.Columns[e.ColumnIndex].ColumnName;
-            using var prompt = new Form
-            {
-                Text = $"Filter column: {column}",
-                Size = new Size(460, 160),
-                FormBorderStyle = FormBorderStyle.FixedDialog,
-                StartPosition = FormStartPosition.CenterParent
-            };
-            var entry = new TextBox { Left = 12, Top = 15, Width = 420 };
-            var ok = new Button
-            {
-                Text = "Apply filter", Left = 315, Top = 57,
-                DialogResult = DialogResult.OK
-            };
-            prompt.Controls.AddRange([entry, ok]);
-            // Grid factory is static, so obtain the owning MainForm before
-            // registering dictation on this temporary filter dialog.
-            if (grid.FindForm() is MainForm owner)
-                owner.AttachDictationToTextBoxes(prompt);
-            prompt.AcceptButton = ok;
-            if (prompt.ShowDialog(grid.FindForm()) != DialogResult.OK) return;
-            if (string.IsNullOrWhiteSpace(entry.Text))
-            {
-                table.DefaultView.RowFilter = "";
-                return;
-            }
-            var safe = entry.Text.Replace("'", "''").Replace("[", "[[]")
-                .Replace("%", "[%]").Replace("*", "[*]");
-            table.DefaultView.RowFilter =
-                $"CONVERT([{column}], 'System.String') LIKE '%{safe}%'";
-        };
-        return grid;
-    }
-
-    private static void SetGridData(
-        DataGridView grid, IReadOnlyList<StatementInfo> statements, bool relevance)
-    {
-        var table = new DataTable();
-        table.Columns.Add("Campaign date/time", typeof(string));
-        table.Columns.Add("Speaking character", typeof(string));
-        table.Columns.Add("Characters hearing it", typeof(string));
-        table.Columns.Add("What was said", typeof(string));
-        if (relevance) table.Columns.Add("Relevance", typeof(double));
-        foreach (var line in statements)
-        {
-            var date = line.WorldDay is int day
-                ? $"Day {day}" + (line.WorldTime is TimeOnly time
-                    ? $" {time:HH:mm}" : "")
-                : "Undated";
-            if (relevance)
-                table.Rows.Add(date, line.Speaker, line.Hearers,
-                               line.Content, Math.Round(line.Relevance, 3));
-            else
-                table.Rows.Add(date, line.Speaker, line.Hearers, line.Content);
-        }
-        grid.DataSource = table;
-        if (grid.Columns.Count > 3)
-            grid.Columns[3].FillWeight = 220;
-        if (relevance && grid.Columns.Count > 4)
-        {
-            grid.Columns[4].FillWeight = 55;
-            grid.Columns[4].DefaultCellStyle.Format = "0.000";
+            grid.LoadStatements(found);
         }
     }
 }
