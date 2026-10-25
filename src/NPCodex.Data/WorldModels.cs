@@ -12,6 +12,12 @@ public sealed record InteractionInfo(
 public sealed record MemoryInfo(
     long Id, string OwnerName, string Content, short Importance, bool IsSecret, bool HasEmbedding);
 
+/// <summary>Lightweight tree listing; does not load campaign-wide memories or interactions.</summary>
+public sealed record CampaignBrowser(
+    long CampaignId,
+    IReadOnlyList<LocationInfo> Locations,
+    IReadOnlyList<CharacterInfo> Characters);
+
 public sealed record CampaignWorld(
     long CampaignId,
     IReadOnlyList<LocationInfo> Locations,
