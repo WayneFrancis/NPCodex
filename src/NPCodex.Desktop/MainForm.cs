@@ -273,6 +273,7 @@ public sealed partial class MainForm : Form
             Padding = new Padding(0, 6, 0, 0) });
         header.Controls.Add(_importance);
         header.Controls.Add(_isSecret);
+        header.Controls.Add(_memoryUseWorldDate);
         header.Controls.Add(new Label { Text = "Edit the NPC's actual knowledge, not the AI's guesses.",
             AutoSize = true, Padding = new Padding(8, 6, 0, 0) });
         editorLayout.Controls.Add(header, 0, 0);
@@ -482,6 +483,7 @@ public sealed partial class MainForm : Form
         _memoryEditor.Text = "";
         _importance.Value = 3;
         _isSecret.Checked = false;
+        _memoryUseWorldDate.Checked = true;
 
         if (CampaignId is not long campaignId || NpcId is not long npcId) return;
 
@@ -506,6 +508,7 @@ public sealed partial class MainForm : Form
         _memoryEditor.Text = item.Memory.Content;
         _importance.Value = item.Memory.Importance;
         _isSecret.Checked = item.Memory.IsSecret;
+        _memoryUseWorldDate.Checked = item.Memory.WorldDay is not null;
         if (item.Memory.WorldDay is int day)
             _worldDay.Value = Math.Clamp(day, (int)_worldDay.Minimum, (int)_worldDay.Maximum);
         if (item.Memory.WorldTime is TimeOnly worldTime)
@@ -519,6 +522,7 @@ public sealed partial class MainForm : Form
         _memoryEditor.Clear();
         _importance.Value = 3;
         _isSecret.Checked = false;
+        _memoryUseWorldDate.Checked = true;
         _memoryEditor.Focus();
     }
 
@@ -533,7 +537,7 @@ public sealed partial class MainForm : Form
             campaignId, npcId, _editingMemory?.Id,
             _memoryEditor.Text, (short)_importance.Value,
             _isSecret.Checked, _editingMemory?.Content,
-            when: CurrentWorldMoment);
+            when: _memoryUseWorldDate.Checked ? CurrentWorldMoment : null);
 
         var embedded = await EmbedSavedMemoryAsync(campaignId, memoryId);
         await LoadMemoriesAsync(memoryId);
@@ -764,7 +768,8 @@ public sealed partial class MainForm : Form
             _aliasTarget.Enabled = _aliasInput.Enabled =
             _aliasAdd.Enabled = _aliasDelete.Enabled =
             _worldDay.Enabled = _worldTime.Enabled = _sceneTopic.Enabled =
-            _memoryRecipients.Enabled = _giveListenerMemories.Enabled = false;
+            _memoryRecipients.Enabled = _giveListenerMemories.Enabled =
+            _memoryUseWorldDate.Enabled = false;
         UseWaitCursor = true;
         try { await operation(); }
         catch (Exception ex)
@@ -791,7 +796,8 @@ public sealed partial class MainForm : Form
                 _aliasTarget.Enabled = _aliasInput.Enabled =
                 _aliasAdd.Enabled = _aliasDelete.Enabled =
             _worldDay.Enabled = _worldTime.Enabled = _sceneTopic.Enabled =
-            _memoryRecipients.Enabled = _giveListenerMemories.Enabled = true;
+            _memoryRecipients.Enabled = _giveListenerMemories.Enabled =
+            _memoryUseWorldDate.Enabled = true;
             _suggestNpcOpening.Enabled = CampaignId is not null;
         }
     }
