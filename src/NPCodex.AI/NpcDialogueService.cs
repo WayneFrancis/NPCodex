@@ -7,7 +7,8 @@ namespace NPCodex.AI;
 public sealed record NpcReplyOption(
     string Style, string Text,
     bool SpeakerWordingAdjusted = false,
-    bool NeedsSpeakerReview = false);
+    bool NeedsSpeakerReview = false,
+    bool NeedsDisclosureReview = false);
 
 /// <summary>For DM inspection only; generated candidates are not saved.</summary>
 public sealed record NpcDialogueChoices(
@@ -332,6 +333,35 @@ public sealed class NpcDialogueService
             var reply = await _chatClient.GenerateAsync(
                 system, playerSays.Trim(), cancellationToken, approvedHistory);
 
+            // A model can repeat a candidate despite distinct disclosure
+            // instructions. One additional request is justified here; don't
+            // loop indefinitely or silently fabricate new content.
+            if (options.Any(o => DialogueVariationCheck.TooSimilar(o.Text, reply)))
+            {
+                var variationRetry = system +
+                    "\n\nTHE FIRST DRAFT WAS TOO SIMILAR TO ANOTHER CANDIDATE. " +
+                    "Rewrite with an OBVIOUSLY DIFFERENT disclosure level toward " +
+                    "the current LISTENER. For Guarded, use at most 35 words and " +
+                    "withhold optional information. For Warm, be more expansive " +
+                    "but include ONLY established, non-secret information or " +
+                    "a clearly subjective opinion. Do not invent facts. " +
+                    "Return spoken dialogue only.";
+                try
+                {
+                    reply = await _chatClient.GenerateAsync(
+                        variationRetry, playerSays.Trim(),
+                        cancellationToken, approvedHistory);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception)
+                {
+                    // Keep the valid first draft as an editable fallback.
+                }
+            }
+
             // Qwen occasionally copies the third-person name from a memory
             // despite knowing the named person is currently speaking. Run an
             // extra *wording-only* pass solely when that issue is detected.
@@ -370,8 +400,10 @@ public sealed class NpcDialogueService
                 }
             }
 
+            var needsDisclosureReview =
+                options.Any(o => DialogueVariationCheck.TooSimilar(o.Text, reply));
             options.Add(new NpcReplyOption(
-                style.Name, reply, adjusted, reviewNeeded));
+                style.Name, reply, adjusted, reviewNeeded, needsDisclosureReview));
         }
 
         return new NpcDialogueChoices(npc, options, _chatClient.ModelName, memories)
