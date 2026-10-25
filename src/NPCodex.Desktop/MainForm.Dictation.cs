@@ -42,10 +42,28 @@ public sealed partial class MainForm
             menu.Items.Add(new ToolStripSeparator());
             var start = new ToolStripMenuItem("Start dictation (microphone)");
             var stop = new ToolStripMenuItem("Stop dictation");
+            var diagnose = new ToolStripMenuItem("Speech recognizer diagnostics...");
+            var voiceTyping = new ToolStripMenuItem("Windows voice typing (Win+H)...");
             start.Click += (_, _) => StartDictation(box);
             stop.Click += (_, _) => StopDictation();
+            diagnose.Click += (_, _) => ShowSpeechDiagnostics();
+            voiceTyping.Click += (_, _) =>
+            {
+                box.Focus();
+                _status.Text = "Press Windows+H to dictate with Windows 11 " +
+                               "voice typing. NPCodex will not start it automatically.";
+                MessageBox.Show(this,
+                    "Focus is now on the text box. Press Windows + H " +
+                    "to start Windows voice typing, and stop it using " +
+                    "the Windows voice typing toolbar.",
+                    "Windows voice typing", MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                box.Focus();
+            };
             menu.Items.Add(start);
             menu.Items.Add(stop);
+            menu.Items.Add(diagnose);
+            menu.Items.Add(voiceTyping);
             menu.Opening += (_, _) =>
             {
                 var active = _dictationEngine is not null;
@@ -92,14 +110,39 @@ public sealed partial class MainForm
                     "Windows voice typing with Win+H as an alternative.");
 
             engine = new SpeechRecognitionEngine(selected);
+            engine.InitialSilenceTimeout = TimeSpan.FromSeconds(30);
+            engine.BabbleTimeout = TimeSpan.FromSeconds(10);
             engine.LoadGrammar(new DictationGrammar());
             engine.SetInputToDefaultAudioDevice();
             var activeEngine = engine;
+            engine.SpeechDetected += (_, _) => ReportDictationStatus(
+                activeEngine, "Speech detected. Recognizing words...");
+            engine.SpeechRecognitionRejected += (_, e) =>
+            {
+                var detail = e.Result is { Text.Length: > 0 }
+                    ? $"Heard '{e.Result.Text}', but the recognizer rejected it."
+                    : "Speech heard, but no words matched the recognition grammar.";
+                ReportDictationStatus(activeEngine, detail);
+            };
+            engine.AudioSignalProblemOccurred += (_, e) =>
+                ReportDictationStatus(activeEngine,
+                    "Microphone audio problem: " + e.AudioSignalProblem);
+            engine.AudioStateChanged += (_, e) =>
+            {
+                if (e.AudioState == AudioState.Stopped)
+                    ReportDictationStatus(activeEngine,
+                        "Speech engine stopped receiving microphone audio.");
+            };
             engine.SpeechRecognized += (_, e) =>
             {
-                if (e.Result is null || e.Result.Confidence < 0.3f ||
-                    string.IsNullOrWhiteSpace(e.Result.Text))
+                if (e.Result is null || string.IsNullOrWhiteSpace(e.Result.Text))
                     return;
+                if (e.Result.Confidence < 0.2f)
+                {
+                    ReportDictationStatus(activeEngine,
+                        $"Recognition confidence low ({e.Result.Confidence:P0}); ignored.");
+                    return;
+                }
                 var phrase = e.Result.Text;
                 if (!IsDisposed && IsHandleCreated)
                 {
@@ -111,6 +154,8 @@ public sealed partial class MainForm
                                 _dictationStopping || target.IsDisposed ||
                                 target.ReadOnly) return;
                             InsertDictatedText(target, phrase);
+                            _status.Text = $"Dictated: {phrase}  " +
+                                "(right-click a field to stop)";
                         }));
                     }
                     catch (InvalidOperationException)
@@ -146,8 +191,9 @@ public sealed partial class MainForm
             _dictationStopping = false;
             engine.RecognizeAsync(RecognizeMode.Multiple);
             target.Focus();
-            _status.Text = $"Microphone listening ({selected.Culture.Name}). " +
-                           "Right-click a text field and choose Stop dictation.";
+            _status.Text = $"Listening via {selected.Name} " +
+                           $"({selected.Culture.Name}). Speak a short phrase. " +
+                           "Status will report speech detection or audio errors.";
         }
         catch (Exception ex)
         {
@@ -163,6 +209,54 @@ public sealed partial class MainForm
                 "Windows voice typing (Win+H) is another option.",
                 "Dictation unavailable", MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
+        }
+    }
+
+    private void ReportDictationStatus(
+        SpeechRecognitionEngine engine, string message)
+    {
+        if (IsDisposed || !IsHandleCreated) return;
+        try
+        {
+            BeginInvoke(new Action(() =>
+            {
+                if (ReferenceEquals(_dictationEngine, engine) &&
+                    !_dictationStopping && !IsDisposed)
+                    _status.Text = message;
+            }));
+        }
+        catch (InvalidOperationException)
+        {
+            // UI is closing while a background recognizer event finishes.
+        }
+    }
+
+    private void ShowSpeechDiagnostics()
+    {
+        try
+        {
+            var installed = SpeechRecognitionEngine.InstalledRecognizers();
+            var current = CultureInfo.CurrentUICulture;
+            var description = installed.Count == 0
+                ? "No compatible System.Speech recognizers installed. " +
+                  "Sound Recorder working does not imply a legacy speech " +
+                  "recognizer is available in Windows 11."
+                : string.Join(Environment.NewLine,
+                    installed.Select(r => $"{r.Name} — {r.Culture.Name}"));
+            MessageBox.Show(this,
+                $"Windows UI language: {current.Name}\\n" +
+                $"Installed System.Speech recognizers: {installed.Count}\\n" +
+                description +
+                "\\n\\nWindows 11 voice typing is separate from System.Speech. " +
+                "To test that alternative, click in a text box and press Win+H.",
+                "Speech recognition diagnostics", MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, ex.ToString(),
+                "Speech recognizer diagnostics failed",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
     }
 
