@@ -130,12 +130,13 @@ public sealed partial class MainForm
         right.Controls.Add(searchBar, 0, 0);
         right.Controls.Add(_memorySearchInfo, 0, 1);
 
-        string[] names = ["Memory ID", "Character", "Type", "Day / time",
+        string[] names = ["Memory ID", "Character", "Type", "Knowledge", "Day / time",
             "Secret", "Embedded", "Score", "Memory excerpt"];
-        string[] dataNames = ["Id", "Character", "Type", "When",
+        string[] dataNames = ["Id", "Character", "Type", "Knowledge", "When",
             "Secret", "Embedded", "Score", "Excerpt"];
         Type[] types = [typeof(long), typeof(string), typeof(string),
-            typeof(string), typeof(bool), typeof(bool), typeof(double), typeof(string)];
+            typeof(string), typeof(string), typeof(bool), typeof(bool),
+            typeof(double), typeof(string)];
         for (var i = 0; i < names.Length; i++)
         {
             _memorySearchTable.Columns.Add(dataNames[i], types[i]);
@@ -143,11 +144,11 @@ public sealed partial class MainForm
             {
                 DataPropertyName = dataNames[i],
                 HeaderText = names[i], ReadOnly = true,
-                FillWeight = i == 7 ? 300 : i == 1 ? 125 : 65,
-                MinimumWidth = i == 7 ? 160 : 54
+                FillWeight = i == 8 ? 300 : i == 1 ? 125 : i == 3 ? 145 : 65,
+                MinimumWidth = i == 8 ? 160 : 54
             });
         }
-        _memorySearchGrid.Columns[6].DefaultCellStyle.Format = "0.000";
+        _memorySearchGrid.Columns[7].DefaultCellStyle.Format = "0.000";
         _memorySearchGrid.DataSource = _memorySearchTable.DefaultView;
         right.Controls.Add(_memorySearchGrid, 0, 2);
         var preview = new GroupBox { Text = "Selected memory (read-only)", Dock = DockStyle.Fill };
@@ -286,7 +287,8 @@ public sealed partial class MainForm
                 var excerpt = memory.Content.Length > 240
                     ? memory.Content[..240] + "..." : memory.Content;
                 _memorySearchTable.Rows.Add(memory.MemoryId,
-                    memory.OwnerName, memory.MemoryType, when,
+                    memory.OwnerName, memory.MemoryType,
+                    MemoryKnowledgeStatus.Label(memory.KnowledgeStatus), when,
                     memory.IsSecret, memory.HasEmbedding,
                     Math.Round(memory.Relevance, 3), excerpt);
             }
@@ -309,13 +311,18 @@ public sealed partial class MainForm
         if (memory is null) return;
         _memorySearchPreview.Text =
             $"{memory.OwnerName} ({memory.OwnerType.ToUpperInvariant()}) | " +
-            $"{memory.MemoryType} | Importance {memory.Importance} | " +
+            $"{memory.MemoryType} | " +
+            $"{MemoryKnowledgeStatus.Label(memory.KnowledgeStatus)} | " +
+            $"Importance {memory.Importance} | " +
             (memory.IsSecret ? "DM SECRET" : "Public") + Environment.NewLine +
             (memory.WorldDay is int day
                 ? $"Day {day}" +
                   (memory.WorldTime is TimeOnly time ? $" at {time:HH:mm}" : "")
                 : "In-world date unknown") + Environment.NewLine +
-            Environment.NewLine + memory.Content;
+            (string.IsNullOrWhiteSpace(memory.KnowledgeSource)
+                ? ""
+                : Environment.NewLine + "Source: " + memory.KnowledgeSource) +
+            Environment.NewLine + Environment.NewLine + memory.Content;
     }
 
     private async Task EmbedPendingMemoriesAsync()
