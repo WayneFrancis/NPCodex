@@ -119,8 +119,9 @@ public sealed partial class MainForm
                 activeEngine, "Speech detected. Recognizing words...");
             engine.SpeechRecognitionRejected += (_, e) =>
             {
-                var detail = e.Result is { Text.Length: > 0 }
-                    ? $"Heard '{e.Result.Text}', but the recognizer rejected it."
+                var recognized = e.Result?.Text;
+                var detail = !string.IsNullOrWhiteSpace(recognized)
+                    ? $"Heard '{recognized}', but the recognizer rejected it."
                     : "Speech heard, but no words matched the recognition grammar.";
                 ReportDictationStatus(activeEngine, detail);
             };
@@ -244,10 +245,10 @@ public sealed partial class MainForm
                 : string.Join(Environment.NewLine,
                     installed.Select(r => $"{r.Name} — {r.Culture.Name}"));
             MessageBox.Show(this,
-                $"Windows UI language: {current.Name}\\n" +
-                $"Installed System.Speech recognizers: {installed.Count}\\n" +
+                $"Windows UI language: {current.Name}\n" +
+                $"Installed System.Speech recognizers: {installed.Count}\n" +
                 description +
-                "\\n\\nWindows 11 voice typing is separate from System.Speech. " +
+                "\n\nWindows 11 voice typing is separate from System.Speech. " +
                 "To test that alternative, click in a text box and press Win+H.",
                 "Speech recognition diagnostics", MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
