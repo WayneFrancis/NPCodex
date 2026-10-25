@@ -225,6 +225,23 @@ public sealed partial class MainForm
                 await LoadRosterHistoryAsync();
             });
         };
+        _conversationRoster.KeyDown += async (_, e) =>
+        {
+            if (e.KeyCode != Keys.Delete) return;
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+            if (_busy || _conversationRoster.SelectedItem is not CharacterChoice choice ||
+                choice.Id is not long id) return;
+            // Keyboard removal deliberately has no confirmation; it does not
+            // delete the character or any approved campaign records.
+            _rosterIds.Remove(id);
+            RebuildConversationRoster();
+            await RunBusyAsync(async () =>
+            {
+                await LoadConversationAsync();
+                await LoadRosterHistoryAsync();
+            });
+        };
         _removeRosterMember.Click += async (_, _) =>
         {
             if (_conversationRoster.SelectedItem is CharacterChoice choice &&
