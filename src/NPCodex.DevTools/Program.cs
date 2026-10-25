@@ -66,6 +66,11 @@ try
     Console.WriteLine($"Memory provenance migration: " +
         (provenanceInstalled ? "installed" : "NOT installed"));
 
+    var maintenanceInstalled = provenanceInstalled &&
+        await db.HasConversationMaintenanceSchemaAsync();
+    Console.WriteLine($"Conversation maintenance migration: " +
+        (maintenanceInstalled ? "installed" : "NOT installed"));
+
     if (!status.InitialMigrationInstalled || status.PgvectorVersion == "not installed")
     {
         Console.Error.WriteLine(
