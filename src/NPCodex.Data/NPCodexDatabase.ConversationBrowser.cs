@@ -97,7 +97,7 @@ public sealed partial class NPCodexDatabase
                 reader.IsDBNull(1) ? null : reader.GetInt32(1),
                 reader.IsDBNull(2) ? null : reader.GetFieldValue<TimeOnly>(2),
                 reader.GetString(3), reader.GetString(4), reader.GetString(5),
-                reader.GetDouble(6)));
+                Convert.ToDouble(reader.GetValue(6))));
         return results;
     }
 
