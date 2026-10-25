@@ -401,6 +401,9 @@ public sealed partial class MainForm : Form
         }
         RebuildConversationRoster();
         PopulateLocationTree();
+        if (_editLocationId is long editingId &&
+            _campaignLocations.Any(l => l.Id == editingId))
+            LoadLocationDetails(editingId);
         await LoadRosterHistoryAsync();
         await LoadMemoriesAsync();
         await LoadConversationAsync();
