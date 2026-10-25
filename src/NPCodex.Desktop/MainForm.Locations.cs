@@ -111,7 +111,7 @@ public sealed partial class MainForm
         }
         foreach (var l in _campaignLocations.Where(l => !excluded.Contains(l.Id))
                      .OrderBy(l => l.Name))
-            _locationParent.Items.Add(new CharacterChoice(l.Id, l.Name));
+            _locationParent.Items.Add(new CharacterChoice(l.Id, LocationPath(l.Id)));
         _locationParent.SelectedItem = _locationParent.Items.Cast<CharacterChoice>()
             .FirstOrDefault(item => item.Id == location.ParentLocationId)
             ?? _locationParent.Items[0];
