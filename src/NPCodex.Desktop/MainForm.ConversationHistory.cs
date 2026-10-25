@@ -161,6 +161,7 @@ public sealed partial class MainForm
                 DialogResult = DialogResult.OK
             };
             prompt.Controls.AddRange([entry, ok]);
+            AttachDictationToTextBoxes(prompt);
             prompt.AcceptButton = ok;
             if (prompt.ShowDialog(grid.FindForm()) != DialogResult.OK) return;
             if (string.IsNullOrWhiteSpace(entry.Text))
