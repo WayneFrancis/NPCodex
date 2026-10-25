@@ -51,6 +51,36 @@ public sealed partial class NPCodexDatabase
         return new CampaignBrowser(campaignId, locations, characters);
     }
 
+    /// <summary>Update occupation independently of the character's D&D class.</summary>
+    public async Task UpdateCharacterOccupationAsync(
+        long campaignId, long characterId, string? occupation,
+        CancellationToken cancellationToken = default)
+    {
+        RequireCampaignId(campaignId);
+        if (characterId <= 0)
+            throw new ArgumentOutOfRangeException(nameof(characterId));
+        occupation = string.IsNullOrWhiteSpace(occupation) ? null : occupation.Trim();
+        if (occupation is { Length: > 200 })
+            throw new ArgumentException("Occupation/role cannot exceed 200 characters.");
+
+        const string sql = """
+            UPDATE characters
+            SET occupation = $3
+            WHERE campaign_id = $1 AND character_id = $2
+            """;
+        await using var cmd = _dataSource.CreateCommand(sql);
+        cmd.Parameters.AddWithValue(campaignId);
+        cmd.Parameters.AddWithValue(characterId);
+        cmd.Parameters.Add(new Npgsql.NpgsqlParameter
+        {
+            NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Text,
+            Value = (object?)occupation ?? DBNull.Value
+        });
+        if (await cmd.ExecuteNonQueryAsync(cancellationToken) != 1)
+            throw new InvalidOperationException(
+                "Character not found in the selected campaign.");
+    }
+
     public async Task MoveCharacterAsync(
         long campaignId, long characterId, long? locationId,
         CancellationToken cancellationToken = default)
