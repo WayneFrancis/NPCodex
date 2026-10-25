@@ -50,7 +50,15 @@ public sealed class OllamaChatClient : IDisposable
         {
             foreach (var turn in approvedHistory.TakeLast(8))
             {
-                messages.Add(new { role = "user", content = LimitTurn(turn.PlayerLine) });
+                var eventLabel = turn.WorldDay is int day
+                    ? $"[Prior exchange on campaign Day {day}" +
+                      (turn.WorldTime is TimeOnly time ? $" at {time:HH:mm}" : "") +
+                      "]\n" : "";
+                messages.Add(new
+                {
+                    role = "user",
+                    content = eventLabel + LimitTurn(turn.PlayerLine)
+                });
                 messages.Add(new { role = "assistant", content = LimitTurn(turn.NpcReply) });
             }
         }
