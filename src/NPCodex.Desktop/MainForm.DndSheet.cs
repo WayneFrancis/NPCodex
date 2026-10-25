@@ -73,10 +73,8 @@ public sealed partial class MainForm
             {
                 AutoSize = true, Padding = new Padding(10, 7, 0, 0)
             };
-            void UpdateModifier(object? _, EventArgs _) =>
-                modifier.Text = $"Modifier: {((int)ability.Value - 10) / 2:+0;-0;0}";
             // Correct D&D floor division for scores below 10.
-            void UpdateDndModifier(object? _, EventArgs _) =>
+            void UpdateDndModifier(object? sender, EventArgs args) =>
                 modifier.Text = $"Modifier: {Math.Floor(((int)ability.Value - 10) / 2.0):+0;-0;0}";
             ability.ValueChanged += UpdateDndModifier;
             UpdateDndModifier(null, EventArgs.Empty);
