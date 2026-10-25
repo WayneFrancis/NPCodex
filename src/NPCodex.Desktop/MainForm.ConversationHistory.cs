@@ -161,7 +161,10 @@ public sealed partial class MainForm
                 DialogResult = DialogResult.OK
             };
             prompt.Controls.AddRange([entry, ok]);
-            AttachDictationToTextBoxes(prompt);
+            // Grid factory is static, so obtain the owning MainForm before
+            // registering dictation on this temporary filter dialog.
+            if (grid.FindForm() is MainForm owner)
+                owner.AttachDictationToTextBoxes(prompt);
             prompt.AcceptButton = ok;
             if (prompt.ShowDialog(grid.FindForm()) != DialogResult.OK) return;
             if (string.IsNullOrWhiteSpace(entry.Text))
