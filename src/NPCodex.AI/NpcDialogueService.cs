@@ -71,7 +71,8 @@ public sealed class NpcDialogueService
         CancellationToken cancellationToken = default,
         IReadOnlyList<ConversationTurn>? approvedHistory = null,
         long? playerCharacterId = null,
-        WorldMoment? currentMoment = null)
+        WorldMoment? currentMoment = null,
+        bool allowPreparedLies = false)
     {
         if (string.IsNullOrWhiteSpace(playerSays) || playerSays.Length > 1200)
             throw new ArgumentException(
@@ -88,7 +89,8 @@ public sealed class NpcDialogueService
             campaignId, npcId, playerSays, maxResults: 5,
             cancellationToken: cancellationToken, includeSecretMemories: false,
             currentWorldDay: currentMoment?.Day,
-            currentWorldTime: currentMoment?.Time);
+            currentWorldTime: currentMoment?.Time,
+            includeCoverStories: allowPreparedLies);
 
         var personality = await _database.GetNpcPersonalityAsync(
             campaignId, npcId, cancellationToken);
@@ -173,6 +175,7 @@ public sealed class NpcDialogueService
             characterName = npc.Name,
             currentSpeakerName = speakerName,
             currentCampaignMoment = currentMoment?.ToString(),
+            dmPermitsPreparedLies = allowPreparedLies,
             currentSpeakerAliases = speakerAliases,
             occupation = npc.Occupation,
             currentLocation = npc.CurrentLocation,
@@ -201,6 +204,8 @@ public sealed class NpcDialogueService
             {
                 memoryId = m.Id,
                 content = m.Content,
+                knowledgeStatus = m.KnowledgeStatus,
+                knowledgeSource = m.KnowledgeSource,
                 happenedOnDay = m.WorldDay,
                 happenedAtTime = m.WorldTime?.ToString("HH:mm")
             })
@@ -261,6 +266,31 @@ public sealed class NpcDialogueService
             The three options MUST differ in disclosure of relevant information
             TO THE PERSON ASKING, not just friendly/adjective word choice.
             Do not speak for the player or invent player actions.
+            NEVER confuse the epistemic status of a memory with established fact.
+            Each memory has a knowledgeStatus defined by the DM:
+              verified: DM-confirmed as true, but only this NPC is established
+                to know it, not the entire campaign.
+              recollection: a remembered experience, potentially imperfect.
+              belief: the NPC thinks it is true but might be mistaken.
+              rumour: information heard secondhand, not established fact.
+              cover_story: a deliberately false claim authored by the DM.
+            A belief or rumour can be repeated IN CHARACTER as something the
+            NPC believes/heard, not as DM-confirmed objective truth.
+            For rumours, name their source only when provided by
+            knowledgeSource and only if it makes conversational sense.
+            If memories conflict, do not silently convert one into a new
+            factual event. The more certain DM-verified claim takes precedence
+            for world continuity, while the NPC may still express confusion.
+            dmPermitsPreparedLies is normally FALSE. When FALSE, no
+            cover_story memory should be supplied and you must NOT invent lies.
+            When TRUE, you MAY choose to tell the current listener a specific
+            DM-authored cover_story from the provided memories, if motivation
+            and trust justify it. Do not invent any further falsehood, add
+            misleading supporting events or reveal to the listener that it
+            is a cover story. It is an OPTIONAL choice, not a requirement.
+            Even a warm NPC can decline to share sensitive information.
+            Do not treat the words of a spoken NPC as universally confirmed
+            world facts. The DM reviews and approves every draft.
             Use stored memories as the NPC's recollections, not objective proof.
             Do not invent established facts: past transactions, promises, prices,
             past events, relationships, quests, inventory or secret knowledge.
@@ -273,6 +303,8 @@ public sealed class NpcDialogueService
             The three options may choose to withhold supported facts. You may
             evade a question, speak vaguely or truthfully refuse to answer;
             NEVER make up a contradictory claim to simulate dishonesty.
+            The only exception is repeating a SPECIFIC saved cover_story
+            when dmPermitsPreparedLies is true, without elaborating fake events.
             The currentCampaignMoment is the fictional current day and time.
             A memory's happenedOnDay/happenedAtTime describes when the event
             occurred IN THE GAME. Never use real created_at timestamps to
