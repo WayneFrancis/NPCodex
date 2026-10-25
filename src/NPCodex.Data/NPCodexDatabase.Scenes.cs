@@ -23,12 +23,14 @@ public sealed partial class NPCodexDatabase
         WorldMoment when, string? replyNpcMemory,
         short importance, bool memorySecret,
         long? conversationId, IReadOnlyCollection<long> memoryRecipients,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IReadOnlyCollection<long>? presentCharacters = null,
+        bool isPrivate = false)
     {
         RequireCampaignId(campaignId);
-        if (replyingNpcId <= 0 || initiatingCharacterId is <= 0 ||
-            initiatingCharacterId == replyingNpcId)
-            throw new ArgumentException("The two speakers must be different characters.");
+        if (replyingNpcId <= 0 || initiatingCharacterId is not long initiatorId ||
+            initiatorId <= 0 || initiatingCharacterId == replyingNpcId)
+            throw new ArgumentException("Choose two different characters as speakers.");
         if (when is null || when.Day < 1)
             throw new ArgumentException("A campaign day of 1 or later is required.");
         if (importance is < 1 or > 5)
@@ -44,7 +46,19 @@ public sealed partial class NPCodexDatabase
 
         var recipients = memoryRecipients.Distinct().ToArray();
         if (recipients.Any(id => id <= 0 || id == replyingNpcId))
-            throw new ArgumentException("Witness recipients must be other valid characters.");
+            throw new ArgumentException("Memory recipients must be other characters.");
+
+        // A roster member only learns a line if present and able to hear it.
+        // The two speakers always hear one another. Private exchanges exclude
+        // all other characters, even if they share the scene's roster.
+        var present = (presentCharacters ?? Array.Empty<long>())
+            .Append(initiatorId).Append(replyingNpcId).Distinct().ToArray();
+        var heardBy = isPrivate
+            ? new[] { initiatorId, replyingNpcId }
+            : present;
+        if (recipients.Any(id => !heardBy.Contains(id)))
+            throw new InvalidOperationException(
+                "Cannot grant hearing memories to characters excluded from this exchange.");
         if (recipients.Length > 50)
             throw new ArgumentException("Limit one scene to 50 memory recipients.");
 
@@ -63,12 +77,15 @@ public sealed partial class NPCodexDatabase
                     $"Character #{id} is not a valid participant in this campaign.");
         }
 
-        var npcName = await CharacterNameAsync(replyingNpcId, "npc");
-        var initiatingName = initiatingCharacterId is long speakerId
-            ? await CharacterNameAsync(speakerId)
-            : "Unspecified speaker";
-        foreach (var personId in recipients)
+        var npcName = await CharacterNameAsync(replyingNpcId);
+        var initiatingName = await CharacterNameAsync(initiatorId);
+        foreach (var personId in present)
             _ = await CharacterNameAsync(personId);
+        if (replyNpcMemory is not null)
+        {
+            // NPC memories are not automatically written to PC character sheets.
+            _ = await CharacterNameAsync(replyingNpcId, "npc");
+        }
 
         long sessionId;
         if (conversationId is long existingId)
@@ -123,16 +140,40 @@ public sealed partial class NPCodexDatabase
                 """, connection, transaction, cancellationToken,
                 campaignId, interactionId, speaker);
 
-        foreach (var recipient in recipients)
+        foreach (var participant in heardBy)
         {
-            if (recipient == initiatingCharacterId) continue;
+            if (participant == initiatorId || participant == replyingNpcId) continue;
             await ExecuteSqlAsync("""
                 INSERT INTO interaction_participants
                     (campaign_id, interaction_id, character_id, participation_role)
                 VALUES ($1, $2, $3, 'witness')
                 """, connection, transaction, cancellationToken,
-                campaignId, interactionId, recipient);
+                campaignId, interactionId, participant);
         }
+
+        async Task SaveStatementAsync(long speaker, string words)
+        {
+            var statementId = await InsertIdAsync("""
+                INSERT INTO conversation_statements
+                    (campaign_id, interaction_id, speaker_character_id,
+                     world_day, world_time, content, is_private)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                RETURNING statement_id
+                """, connection, transaction, cancellationToken,
+                campaignId, interactionId, speaker,
+                when.Day, when.Time, words, isPrivate);
+            foreach (var hearer in heardBy.Where(id => id != speaker))
+                await ExecuteSqlAsync("""
+                    INSERT INTO statement_hearers
+                        (campaign_id, statement_id, character_id)
+                    VALUES ($1, $2, $3)
+                    """, connection, transaction, cancellationToken,
+                    campaignId, statementId, hearer);
+        }
+
+        // These rows are the canonical searchable statement-level history.
+        await SaveStatementAsync(initiatorId, initiatingLine);
+        await SaveStatementAsync(replyingNpcId, approvedNpcReply);
 
         await ExecuteSqlAsync("""
             INSERT INTO conversation_turns
