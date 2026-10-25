@@ -208,9 +208,10 @@ public sealed partial class MainForm
                     {
                         BeginInvoke(new Action(() =>
                         {
+                            // A graceful Stop may still complete the final
+                            // utterance. Accept that result before disposal.
                             if (_dictationEngine != activeEngine ||
-                                _dictationStopping || target.IsDisposed ||
-                                target.ReadOnly) return;
+                                target.IsDisposed || target.ReadOnly) return;
                             InsertDictatedText(target, phrase);
                             _status.Text = $"Dictated: {phrase}  " +
                                 "(right-click a field to stop)";
@@ -338,11 +339,12 @@ public sealed partial class MainForm
     {
         if (_dictationEngine is not { } engine || _dictationStopping) return;
         _dictationStopping = true;
-        _status.Text = "Stopping microphone dictation...";
+        _status.Text = "Finishing current utterance and stopping dictation...";
         try
         {
-            // Cancel immediately; RecognizeCompleted handles final disposal.
-            engine.RecognizeAsyncCancel();
+            // Stop gracefully so the final speech result can be recognized.
+            // Cancel() truncates the input and can discard the last phrase.
+            engine.RecognizeAsyncStop();
         }
         catch (Exception)
         {
