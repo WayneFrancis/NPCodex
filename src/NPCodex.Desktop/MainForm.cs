@@ -111,7 +111,9 @@ public sealed partial class MainForm : Form
         split.Panel1.Controls.Add(BuildCampaignNavigation());
 
         var dialogueTab = new TabPage("Dialogue");
+        var dialogueHistoryTab = new TabPage("Conversation History");
         _tabs.TabPages.Add(dialogueTab);
+        _tabs.TabPages.Add(dialogueHistoryTab);
         _tabs.TabPages.Add(_memoriesTab);
         _tabs.TabPages.Add(_personalityTab);
         _tabs.TabPages.Add(_aliasesTab);
@@ -120,7 +122,7 @@ public sealed partial class MainForm : Form
 
         var conversation = new TableLayoutPanel
         {
-            Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 9,
+            Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 8,
             Padding = new Padding(9), AutoScroll = true
         };
         conversation.RowStyles.Add(new RowStyle(SizeType.Absolute, 155));
@@ -131,8 +133,8 @@ public sealed partial class MainForm : Form
         conversation.RowStyles.Add(new RowStyle(SizeType.Absolute, 142));
         conversation.RowStyles.Add(new RowStyle(SizeType.Absolute, 165));
         conversation.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
-        conversation.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         dialogueTab.Controls.Add(conversation);
+        dialogueHistoryTab.Controls.Add(BuildConversationHistoryArea());
 
         conversation.Controls.Add(BuildConversationHeader(), 0, 0);
 
@@ -210,8 +212,6 @@ public sealed partial class MainForm : Form
         saveRow.Controls.Add(new Label { Text = "Saves the chosen dialogue; memory is optional.",
             AutoSize = true, Padding = new Padding(8, 9, 0, 0) });
         conversation.Controls.Add(saveRow, 0, 7);
-
-        conversation.Controls.Add(BuildConversationHistoryArea(), 0, 8);
 
         BuildMemoryTab();
         BuildPersonalityTab();
