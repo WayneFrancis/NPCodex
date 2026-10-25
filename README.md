@@ -1225,3 +1225,86 @@ recognizers; whether the status says **Speech detected**, **Speech
 rejected**, or **microphone audio problem**; and whether Windows+H can
 dictate into that same NPCodex text box. Those distinguish an unavailable
 recognizer from a microphone-routing or recognition-quality problem.
+
+
+## Phase 10 follow-up: Campaign-wide memory search and legacy mic diagnostics
+
+This update adds a **Memory Search** tab, but makes **no database schema
+changes**. It reuses the existing memories table and its pgvector column.
+
+```powershell
+cd D:\dev\NPCodex
+git pull --ff-only
+dotnet build NPCodex.slnx
+dotnet run --project src/NPCodex.Desktop
+```
+
+### Searching memory across characters
+
+- Open **Memory Search**. On the left, tick any number of PCs or NPCs.
+  Filter the character list by name or role to find a character quickly.
+  An **empty selection searches ALL character memories** within the
+  currently selected campaign, never across campaigns.
+- Alternatively, while on Memory Search, **double-click** a character
+  in the campaign location tree to add them to the selected search scope.
+  **Delete** unchecks the highlighted character; **Clear selection (all)**
+  removes the restrictions.
+- **Text / keywords** searches both PostgreSQL full-text terms and
+  literal substrings. An empty search expression lists recent memories
+  for the chosen owner(s), or the entire campaign.
+- **Meaning (vectors)** uses `nomic-embed-text` through the existing
+  local Ollama embedding client and compares to existing memory vectors
+  with pgvector cosine distance. It can retrieve semantically similar
+  memories that do not share the query's exact words. Enter a query;
+  the semantic mode cannot meaningfully list results without one.
+- The grid shows memory ID, owner, type, fictional day/time,
+  DM-secret status, whether an embedding exists, the relevance score,
+  and a text excerpt. Selecting a row shows the full text and owner in
+  a read-only preview; PC memories are searchable even though the
+  earlier Memories editing tab only edits NPC memories.
+- **Include DM-secret memories** is checked by default because this
+  is a DM-only application. Untick it to exclude secret memories.
+  Searching does not send memory text to a third-party service: the
+  query is embedded by local Ollama, then the private vector comparison
+  takes place inside local PostgreSQL.
+- Semantic search **only includes memories with current
+  `nomic-embed-text` embeddings**. Use **Embed missing (up to 100)**
+  to process a batch of unembedded memories for this campaign (both
+  PC and NPC), then repeat for larger campaigns. It uses local Ollama
+  and never modifies the actual memory text.
+- Relevance scores from word matching and from vector cosine similarity
+  are two different metrics and **are not directly comparable**. Both
+  query modes are limited to a bounded result set (currently up to 300
+  for text and 100 for vectors).
+
+### What the legacy Windows recognizer can hear
+
+The speech diagnostics already reported an installed `en-GB`
+recognizer, `MS-2057-80-DESK`. Having a recognizer installed does not
+prove that its in-process microphone capture or `DictationGrammar`
+works in a particular Windows 11 configuration. Windows+H is a separate
+voice-typing system and can work even when the older engine does not.
+
+The recognition session now tracks input audio-level updates (including
+peak microphone level, from 0 to 100), detected speech, hypotheses,
+accepted phrases and rejected phrases. After you start and stop one
+dictation session, right-click the text field and choose **Speech
+recognizer diagnostics...** to see the last session counters.
+
+Suggested test:
+1. On Dialogue, right-click an editable field and choose Start dictation.
+2. Speak a short, ordinary sentence (avoid fantasy names for this test).
+   Look for microphone level changes or **Speech detected** at the bottom.
+3. Stop dictation. Open diagnostics again. Record the
+   **Audio updates, peak level, speech detected, hypotheses, recognized,
+   rejected** counters.
+
+If **Audio updates = 0** or peak stays zero, investigate the
+`System.Speech` capture device/microphone stream, even if Windows+H works.
+If the level changes but no words are recognized, focus on the installed
+legacy recognition engine and its grammar. The intended eventual
+upgrade is a modern local speech recognizer, for example a
+Whisper-compatible engine, using the same context-menu workflow.
+
+The changes are committed and reviewed statically; confirm the
+Windows build and microphone behaviour locally.
