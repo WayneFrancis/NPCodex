@@ -13,6 +13,20 @@ public sealed partial class MainForm
         Checked = true
     };
 
+    private readonly NumericUpDown _memoryWorldDay = new()
+    {
+        Minimum = 1, Maximum = 1_000_000, Value = 1, Width = 75
+    };
+    private readonly DateTimePicker _memoryWorldTime = new()
+    {
+        Format = DateTimePickerFormat.Custom,
+        CustomFormat = "HH:mm", ShowUpDown = true,
+        Width = 78, Value = DateTime.Today.AddHours(9)
+    };
+    private WorldMoment MemoryWorldMoment =>
+        new((int)_memoryWorldDay.Value,
+            TimeOnly.FromDateTime(_memoryWorldTime.Value));
+
     private readonly NumericUpDown _worldDay = new()
     {
         Minimum = 1, Maximum = 1_000_000, Value = 1, Width = 88
