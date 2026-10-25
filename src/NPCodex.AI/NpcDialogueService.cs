@@ -85,12 +85,24 @@ public sealed class NpcDialogueService
             ?? throw new InvalidOperationException(
                 $"NPC {npcId} was not found in campaign {campaignId}.");
 
-        var memories = await _memoryService.SearchAsync(
-            campaignId, npcId, playerSays, maxResults: 5,
+        // Retrieve a wider pool, then retain only memories referring to a
+        // clearly named subject when one appears in the player's question.
+        // Otherwise a semantically nearby but unrelated map/person/rumour
+        // may be treated as evidence by the chat model.
+        var candidateMemories = await _memoryService.SearchAsync(
+            campaignId, npcId, playerSays, maxResults: 25,
             cancellationToken: cancellationToken, includeSecretMemories: false,
             currentWorldDay: currentMoment?.Day,
             currentWorldTime: currentMoment?.Time,
             includeCoverStories: allowPreparedLies);
+        var namedSubjects = NpcEvidenceScope.NamedSubjects(playerSays);
+        var memories = NpcEvidenceScope.FilterNamedSubject(
+            candidateMemories, namedSubjects).Take(5).ToArray();
+
+        // Rewinding the in-world clock must not give Qwen conversations
+        // that happened later, even if the UI still shows those exchanges.
+        var relevantHistory = NpcEvidenceScope.ExcludeFutureTurns(
+            approvedHistory, currentMoment);
 
         var personality = await _database.GetNpcPersonalityAsync(
             campaignId, npcId, cancellationToken);
@@ -164,6 +176,34 @@ public sealed class NpcDialogueService
         if (referencedNpcRelationships.Length > 0)
             relationshipStatus += " Referenced NPCs: " +
                 string.Join(", ", referencedNpcRelationships.Select(r => r.TargetName)) + ".";
+
+        var excludedAsOffTopic = candidateMemories.Count - memories.Length;
+        if (namedSubjects.Count > 0)
+            relationshipStatus +=
+                $" Topic evidence: {memories.Length} relevant memory/memories; " +
+                $"{excludedAsOffTopic} other candidate(s) excluded.";
+
+        // An explicit question about a named subject must not turn a vector
+        // near-match into gossip, invent witnesses, or borrow an unrelated
+        // memory. When no eligible memories or approved NPC statements
+        // support this subject, bypass free-form generation entirely.
+        // Each result remains an editable, DM-approved suggestion.
+        if (namedSubjects.Count > 0 && memories.Length == 0 &&
+            !NpcEvidenceScope.HasPriorNpcStatementAbout(
+                relevantHistory, namedSubjects))
+        {
+            var safeOptions = Styles.Take(count)
+                .Select(style => new NpcReplyOption(
+                    style.Name, NpcEvidenceScope.UnverifiedFallback(style.Name)))
+                .ToArray();
+            return new NpcDialogueChoices(
+                npc, safeOptions, _chatClient.ModelName, memories)
+            {
+                RelationshipStatus = relationshipStatus +
+                    " No eligible evidence about the named subject; " +
+                    "used cautious, non-invented draft replies."
+            };
+        }
 
         var disclosureBase = attitude?.Disposition ?? (short)0;
         var protectedOthers = referencedNpcRelationships.Where(r => r.Disposition >= 40).ToArray();
@@ -379,7 +419,7 @@ public sealed class NpcDialogueService
                 style.Name + ": " + style.Direction +
                 previousAlternatives;
             var reply = await _chatClient.GenerateAsync(
-                system, playerSays.Trim(), cancellationToken, approvedHistory);
+                system, playerSays.Trim(), cancellationToken, relevantHistory);
 
             // A model can repeat a candidate despite distinct disclosure
             // instructions. One additional request is justified here; don't
@@ -398,7 +438,7 @@ public sealed class NpcDialogueService
                 {
                     reply = await _chatClient.GenerateAsync(
                         variationRetry, playerSays.Trim(),
-                        cancellationToken, approvedHistory);
+                        cancellationToken, relevantHistory);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
