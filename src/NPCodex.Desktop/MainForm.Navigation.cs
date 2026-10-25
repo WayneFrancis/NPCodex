@@ -27,6 +27,10 @@ public sealed partial class MainForm
     {
         Width = 210, DropDownStyle = ComboBoxStyle.DropDownList
     };
+    private readonly Button _addRootLocation = new()
+    {
+        Text = "Add location", AutoSize = true
+    };
     private readonly Button _removeRosterMember = new()
     {
         Text = "Remove", AutoSize = true
@@ -60,7 +64,7 @@ public sealed partial class MainForm
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 43));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 78));
         layout.Controls.Add(new Label
         {
             Text = "Campaign", Dock = DockStyle.Fill,
@@ -76,6 +80,9 @@ public sealed partial class MainForm
         buttons.Controls.Add(refresh);
         buttons.Controls.Add(_addNpcButton);
         buttons.Controls.Add(_addPcButton);
+        buttons.Controls.Add(_addRootLocation);
+        _addRootLocation.Click += async (_, _) =>
+            await RunBusyAsync(() => AddChildLocationAsync(null));
         layout.Controls.Add(buttons, 0, 4);
 
         var menu = new ContextMenuStrip();
@@ -103,6 +110,12 @@ public sealed partial class MainForm
         menu.Items.Add(addPc);
         menu.Items.Add(addLocation);
         _campaignTree.ContextMenuStrip = menu;
+        _campaignTree.MouseDown += (_, e) =>
+        {
+            if (e.Button == MouseButtons.Right &&
+                _campaignTree.GetNodeAt(e.Location) is null)
+                _contextLocationNode = null;
+        };
         _campaignTree.NodeMouseClick += (_, e) =>
         {
             if (e.Button == MouseButtons.Right)
