@@ -706,8 +706,8 @@ public sealed partial class MainForm : Form
             $"Approve dialogue on {CurrentWorldMoment}? " +
             (withMemory ? "Create the responding NPC's written memory. " :
                 "No responding-NPC memory selected. ") +
-            (recipients.Count > 0
-                ? $"Also create {recipients.Count} attributed hearing memory/memories."
+            (recipients.Length > 0
+                ? $"Also create {recipients.Length} attributed hearing memory/memories."
                 : "No other character memories will be created.");
         if (MessageBox.Show(notice, "Approve NPC dialogue",
                 MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
