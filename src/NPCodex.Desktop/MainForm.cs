@@ -799,7 +799,7 @@ public sealed partial class MainForm : Form
             _sheetSave.Enabled = _statementSearch.Enabled =
             _searchStatements.Enabled = _refreshStatements.Enabled =
             _memoryWorldDay.Enabled = _memoryWorldTime.Enabled =
-            _addPcButton.Enabled = false;
+            _addPcButton.Enabled = _addRootLocation.Enabled = false;
         UseWaitCursor = true;
         try { await operation(); }
         catch (Exception ex)
@@ -837,7 +837,7 @@ public sealed partial class MainForm : Form
             _sheetSave.Enabled = _statementSearch.Enabled =
             _searchStatements.Enabled = _refreshStatements.Enabled =
             _memoryWorldDay.Enabled = _memoryWorldTime.Enabled =
-            _addPcButton.Enabled = true;
+            _addPcButton.Enabled = _addRootLocation.Enabled = true;
             _suggestNpcOpening.Enabled = CampaignId is not null;
             _createMemoryOnApproval.Enabled = SelectedResponderIsNpc;
         }
