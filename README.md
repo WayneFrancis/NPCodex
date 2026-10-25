@@ -1466,3 +1466,104 @@ dotnet run --project src/NPCodex.Desktop
 
 The source changes are committed and statically checked, but require
 local .NET compilation and in-game testing.
+
+
+## Conversation corrections and semantic transcript search (migration 0008)
+
+Apply **database/migrations/0008_conversation_maintenance.sql** once, in
+DBeaver, after migration 0007. The desktop app requires migration 0008
+before starting.
+
+```powershell
+cd D:\dev\NPCodex
+git pull --ff-only
+dotnet build NPCodex.slnx
+# Apply migration 0008 with DBeaver before running.
+dotnet run --project src/NPCodex.Desktop
+```
+
+### Correct campaign time without damaging history
+
+In **Conversation History**, double-click a statement or right-click it
+and choose **Edit exchange date/time...**. The editor displays the
+existing campaign day/time, a read-only excerpt, the number of statements
+in the exchange, and the number of memories linked to the interaction.
+Choose a new day and time, then confirm.
+
+Corrections are **atomic** and apply to the entire approved exchange:
+- Parent `interactions.world_day/world_time/campaign_day` are updated.
+- All `conversation_statements` belonging to that interaction receive the
+  corrected day/time, so the initiating line and NPC reply remain aligned.
+- Linked memories still carrying the interaction's old day/time receive
+  the new metadata. Memories that the DM independently re-dated are
+  deliberately left untouched.
+- Auto-generated `overheard` memories containing the old
+  `On Day X at HH:mm` prefix have that prefix updated. Their pgvector
+  embedding is invalidated when the text changes, so refresh those
+  memory embeddings using the existing Memory Search embedding button.
+- An audit trail is kept in `conversation_time_edits`, recording old/new
+  campaign moments and time edited. No rows are deleted.
+- A concurrent change to the parent interaction date prevents a stale
+  editor from silently overwriting the new date.
+
+**This editor deliberately does not change the words spoken or the
+speaker/hearers**. The same utterance also appears in an interaction
+transcript, approved turn and potentially several character memories;
+editing its text safely requires a separate provenance-aware workflow.
+
+### Search the meanings of historical conversations
+
+Approved conversation statements now have optional
+`VECTOR(768)` and `embedding_model` fields. The existing lexical
+search still works without embeddings.
+
+- Open **Conversation History** and click **Embed 100 statements**.
+  This uses local Ollama's `nomic-embed-text` model to create vectors
+  for up to 100 missing/out-of-date statements in the selected campaign.
+  Repeat the operation to cover larger histories.
+- Choose **Meaning (vectors)** from the search mode dropdown, enter a
+  question or concept and click **Search conversations**. The app
+  creates a local embedding for the query and ranks existing embedded
+  statements by pgvector cosine similarity. Results are shown in
+  a new labelled tab with similarity scores.
+- Choose **Text / keywords** to retain the previous literal and
+  PostgreSQL full-text search behaviour. Both modes are strictly scoped
+  to the selected campaign, not to the current conversation roster.
+- The *Conversation members* tab still displays statements spoken/heard
+  by selected conversation participants. In all tabs, double-click a
+  result to correct its exchange time.
+- Search-result tabs remember their original search mode and query so
+  **Refresh history** reloads the correct results. Close a tab without
+  deleting statements.
+
+### Known limitations and checks
+
+- Similarity is a *ranking*, not proof that a statement is true or that
+  two statements concern exactly the same event.
+- Only embedded statements appear in meaning search. There is no
+  automatic background embedding; existing statements need the explicit
+  batch action.
+- A timestamp correction changes no spoken words, so conversation
+  vectors remain valid. Auto-generated witness memories whose *text*
+  changes require re-embedding.
+- **The NPC response generator does not yet automatically read all old
+  conversation vectors**. It uses its existing chronologically filtered
+  memory and approved-turn context. Semantic conversation search is
+  currently a DM-facing research tool.
+- Time correction does not rewrite user-authored memories whose body
+  text independently mentions a campaign date. Review those manually
+  if needed.
+
+Regression tests:
+1. Create a small approved exchange with a hearing memory.
+2. Double-click one of the two lines and correct its day/time.
+   Verify both lines move together, chronological filtering in NPC
+   responses is updated, and the generated overhearing memory's date
+   text changes to match.
+3. Re-embed pending character memories from **Memory Search** if needed.
+4. Use **Embed 100 statements** in Conversation History, then compare
+   a literal search with Meaning (vectors) for a paraphrased question.
+5. Repeat a search in a different campaign to confirm strict scoping.
+
+The code has been committed and statically reviewed; a local Windows
+`dotnet build` and PostgreSQL migration test are still required.
