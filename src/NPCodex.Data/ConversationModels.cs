@@ -6,4 +6,9 @@ public sealed record ConversationSession(
 
 public sealed record ConversationTurn(
     long Id, long InteractionId, string PlayerLine,
-    string NpcReply, DateTime ApprovedAtUtc);
+    string NpcReply, DateTime ApprovedAtUtc)
+{
+    public long? SpeakerCharacterId { get; init; }
+    public int? WorldDay { get; init; }
+    public TimeOnly? WorldTime { get; init; }
+}
