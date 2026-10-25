@@ -111,11 +111,15 @@ public sealed partial class MainForm
             Dock = DockStyle.Fill, Padding = new Padding(8),
             ColumnCount = 1, RowCount = 4
         };
-        right.RowStyles.Add(new RowStyle(SizeType.Absolute, 45));
+        right.RowStyles.Add(new RowStyle(SizeType.Absolute, 90));
         right.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
         right.RowStyles.Add(new RowStyle(SizeType.Percent, 65));
         right.RowStyles.Add(new RowStyle(SizeType.Percent, 35));
-        var searchBar = new FlowLayoutPanel { Dock = DockStyle.Fill };
+        var searchBar = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill, AutoScroll = true,
+            WrapContents = true
+        };
         _memorySearchMode.Items.AddRange(["Text / keywords", "Meaning (vectors)"]);
         _memorySearchMode.SelectedIndex = 0;
         searchBar.Controls.Add(_memorySearchPhrase);
@@ -249,6 +253,9 @@ public sealed partial class MainForm
         var query = _memorySearchPhrase.Text.Trim();
         var owners = _memorySearchSelectedOwnerIds.ToArray();
         bool meaning = _memorySearchMode.SelectedIndex == 1;
+        if (meaning && query.Length == 0)
+            throw new InvalidOperationException(
+                "Enter a phrase to search by meaning, or select Text / keywords to browse.");
         _memorySearchInfo.Text = meaning
             ? "Embedding your query using local Ollama..."
             : "Searching campaign memory text...";
@@ -256,9 +263,6 @@ public sealed partial class MainForm
         IReadOnlyList<CampaignMemoryHit> found;
         if (meaning)
         {
-            if (query.Length == 0)
-                throw new InvalidOperationException(
-                    "Enter a phrase to search by meaning, or select Text / keywords to browse.");
             var vector = await _embeddingClient.EmbedQueryAsync(query);
             found = await _database.SearchCampaignMemoriesByMeaningAsync(
                 campaignId, owners, OllamaEmbeddingClient.ModelName,
