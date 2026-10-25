@@ -836,7 +836,11 @@ public sealed partial class MainForm : Form
             _searchStatements.Enabled = _refreshStatements.Enabled =
             _memoryWorldDay.Enabled = _memoryWorldTime.Enabled =
             _addPcButton.Enabled = _addRootLocation.Enabled =
-            _saveLocation.Enabled = _deleteLocation.Enabled = false;
+            _saveLocation.Enabled = _deleteLocation.Enabled =
+            _memorySearchOwners.Enabled = _memorySearchOwnerFilter.Enabled =
+            _memorySearchPhrase.Enabled = _memorySearchMode.Enabled =
+            _memorySearchSecrets.Enabled = _memorySearchButton.Enabled =
+            _memoryEmbedButton.Enabled = false;
         UseWaitCursor = true;
         try { await operation(); }
         catch (Exception ex)
@@ -876,6 +880,10 @@ public sealed partial class MainForm : Form
             _memoryWorldDay.Enabled = _memoryWorldTime.Enabled =
             _addPcButton.Enabled = _addRootLocation.Enabled = true;
             _saveLocation.Enabled = _deleteLocation.Enabled = _editLocationId is not null;
+            _memorySearchOwners.Enabled = _memorySearchOwnerFilter.Enabled =
+            _memorySearchPhrase.Enabled = _memorySearchMode.Enabled =
+            _memorySearchSecrets.Enabled = _memorySearchButton.Enabled =
+            _memoryEmbedButton.Enabled = true;
             _suggestNpcOpening.Enabled = CampaignId is not null;
             _createMemoryOnApproval.Enabled = SelectedResponderIsNpc;
         }
