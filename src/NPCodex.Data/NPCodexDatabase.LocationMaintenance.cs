@@ -138,10 +138,9 @@ public sealed partial class NPCodexDatabase
         {
             await using var cmd = new NpgsqlCommand(sql, connection, tx);
             if (sql.Contains("$1", StringComparison.Ordinal))
-            {
                 cmd.Parameters.AddWithValue(campaignId);
+            if (sql.Contains("$2", StringComparison.Ordinal))
                 cmd.Parameters.AddWithValue(locationId);
-            }
             return await cmd.ExecuteNonQueryAsync(cancellationToken);
         }
 
