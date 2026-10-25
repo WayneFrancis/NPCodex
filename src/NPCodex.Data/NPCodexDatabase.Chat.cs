@@ -53,6 +53,24 @@ public sealed partial class NPCodexDatabase
             reader.IsDBNull(3) ? null : reader.GetString(3),
             reader.IsDBNull(4) ? null : reader.GetString(4));
     }
+    /// <summary>Resolve the selected dialogue speaker, PC or NPC.</summary>
+    public async Task<string> GetDialogueSpeakerNameAsync(
+        long campaignId, long characterId,
+        CancellationToken cancellationToken = default)
+    {
+        RequireCampaignId(campaignId);
+        if (characterId <= 0)
+            throw new ArgumentOutOfRangeException(nameof(characterId));
+        await using var command = _dataSource.CreateCommand("""
+            SELECT name FROM characters
+            WHERE campaign_id = $1 AND character_id = $2
+            """);
+        command.Parameters.AddWithValue(campaignId);
+        command.Parameters.AddWithValue(characterId);
+        return await command.ExecuteScalarAsync(cancellationToken) as string
+            ?? throw new InvalidOperationException("Dialogue speaker not found in campaign.");
+    }
+
     /// <summary>
     /// Resolve the exact player-character name in the selected campaign.
     /// A saved relationship is optional; speaker identity is not.
