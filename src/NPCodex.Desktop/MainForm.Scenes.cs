@@ -164,10 +164,14 @@ public sealed partial class MainForm
 
     private async Task SuggestNpcOpeningAsync()
     {
-        if (CampaignId is not long campaignId || NpcId is not long npcId ||
+        if (CampaignId is not long campaignId ||
+            ReplyCharacterId is not long npcId ||
             PlayerId is not long initiatingId)
             throw new InvalidOperationException(
                 "Select the responding NPC and a different initiating NPC.");
+        if (!SelectedResponderIsNpc)
+            throw new InvalidOperationException(
+                "Select an NPC as the answering character to suggest an opening.");
         if (_campaignCharacters.FirstOrDefault(c => c.Id == initiatingId)?.Type != "npc")
             throw new InvalidOperationException(
                 "Suggest NPC opening requires an NPC as the initiating speaker.");
