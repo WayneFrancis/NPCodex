@@ -46,6 +46,6 @@ internal static class CampaignNameMatcher
     {
         return NamesOf(index, characterId).Any(name => Regex.IsMatch(
             playerLine, $@"(?<![\p{{L}}\p{{N}}]){Regex.Escape(name)}(?![\p{{L}}\p{{N}}])",
-            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant));
+            RegexOptions.CultureInvariant));
     }
 }
