@@ -303,6 +303,7 @@ public sealed partial class MainForm : Form
         WireHistoryEvents();
         WireDndSheetEvents();
         _addNpcButton.Click += async (_, _) => await RunBusyAsync(() => AddNpcAsync());
+        _addPcButton.Click += async (_, _) => await RunBusyAsync(() => AddPcAsync());
     }
 
     private async Task LoadCampaignsAsync()
