@@ -633,7 +633,8 @@ public sealed partial class MainForm : Form
             campaignId, npcId, _playerLine.Text,
             approvedHistory: _approvedTurns,
             playerCharacterId: PlayerId,
-            currentMoment: CurrentWorldMoment);
+            currentMoment: CurrentWorldMoment,
+            allowPreparedLies: _allowPreparedLies.Checked);
         _latestOptions = choices;
         var fixedCount = choices.Options.Count(o => o.SpeakerWordingAdjusted);
         var speakerWarnings = choices.Options.Count(o => o.NeedsSpeakerReview);
