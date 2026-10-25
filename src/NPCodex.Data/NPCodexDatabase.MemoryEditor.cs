@@ -12,7 +12,8 @@ public sealed partial class NPCodexDatabase
 
         const string sql = """
             SELECT m.memory_id, m.content, m.importance, m.is_secret,
-                   m.memory_type, m.embedding IS NOT NULL, m.created_at
+                   m.memory_type, m.embedding IS NOT NULL, m.created_at,
+                   m.world_day, m.world_time
             FROM memories m
             JOIN characters c ON c.campaign_id = m.campaign_id
                              AND c.character_id = m.owner_character_id
@@ -29,7 +30,11 @@ public sealed partial class NPCodexDatabase
             list.Add(new NpcMemoryRecord(
                 reader.GetInt64(0), reader.GetString(1), reader.GetInt16(2),
                 reader.GetBoolean(3), reader.GetString(4),
-                reader.GetBoolean(5), reader.GetDateTime(6)));
+                reader.GetBoolean(5), reader.GetDateTime(6))
+            {
+                WorldDay = reader.IsDBNull(7) ? null : reader.GetInt32(7),
+                WorldTime = reader.IsDBNull(8) ? null : reader.GetFieldValue<TimeOnly>(8)
+            });
         return list;
     }
 
@@ -41,10 +46,13 @@ public sealed partial class NPCodexDatabase
     public async Task<long> SaveNpcMemoryAsync(
         long campaignId, long npcId, long? memoryId, string content,
         short importance, bool isSecret, string? expectedContent = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        WorldMoment? when = null)
     {
         RequireCampaignId(campaignId);
         if (npcId <= 0) throw new ArgumentOutOfRangeException(nameof(npcId));
+        if (when is not null && when.Day < 1)
+            throw new ArgumentException("Campaign day must be at least 1.");
         RequireText(content, nameof(content));
         if (importance is < 1 or > 5)
             throw new ArgumentOutOfRangeException(nameof(importance));
@@ -55,8 +63,9 @@ public sealed partial class NPCodexDatabase
             // INSERT ... SELECT rejects invalid or non-NPC owners.
             const string insert = """
                 INSERT INTO memories (campaign_id, owner_character_id, content,
-                                     memory_type, importance, is_secret)
-                SELECT $1, c.character_id, $3, 'manual', $4, $5
+                                     memory_type, importance, is_secret,
+                                     world_day, world_time)
+                SELECT $1, c.character_id, $3, 'manual', $4, $5, $6, $7
                 FROM characters c
                 WHERE c.campaign_id = $1 AND c.character_id = $2
                   AND c.character_type = 'npc'
@@ -68,6 +77,16 @@ public sealed partial class NPCodexDatabase
             command.Parameters.AddWithValue(content);
             command.Parameters.AddWithValue(importance);
             command.Parameters.AddWithValue(isSecret);
+            command.Parameters.Add(new NpgsqlParameter
+            {
+                NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Integer,
+                Value = (object?)when?.Day ?? DBNull.Value
+            });
+            command.Parameters.Add(new NpgsqlParameter
+            {
+                NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Time,
+                Value = (object?)when?.Time ?? DBNull.Value
+            });
             var result = await command.ExecuteScalarAsync(cancellationToken);
             return result is long id ? id
                 : throw new InvalidOperationException("NPC not found in this campaign.");
@@ -82,6 +101,8 @@ public sealed partial class NPCodexDatabase
                SET content = $4,
                    importance = $5,
                    is_secret = $6,
+                   world_day = $8,
+                   world_time = $9,
                    embedding = CASE WHEN m.content = $4 THEN m.embedding ELSE NULL END,
                    embedding_model = CASE WHEN m.content = $4 THEN m.embedding_model ELSE NULL END
             FROM characters c
@@ -101,6 +122,16 @@ public sealed partial class NPCodexDatabase
             command.Parameters.AddWithValue(importance);
             command.Parameters.AddWithValue(isSecret);
             command.Parameters.AddWithValue(expectedContent);
+            command.Parameters.Add(new NpgsqlParameter
+            {
+                NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Integer,
+                Value = (object?)when?.Day ?? DBNull.Value
+            });
+            command.Parameters.Add(new NpgsqlParameter
+            {
+                NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Time,
+                Value = (object?)when?.Time ?? DBNull.Value
+            });
             var result = await command.ExecuteScalarAsync(cancellationToken);
             return result is long id ? id
                 : throw new InvalidOperationException(
