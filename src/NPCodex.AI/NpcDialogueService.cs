@@ -22,6 +22,7 @@ public sealed record NpcDialogueChoices(
     /// was actually used to generate these particular replies.
     /// </summary>
     public string RelationshipStatus { get; init; } = "Relationship not evaluated.";
+    public bool UsedEvidenceFallback { get; init; }
 }
 
 public sealed record NpcDialoguePreview(
@@ -201,7 +202,8 @@ public sealed class NpcDialogueService
             {
                 RelationshipStatus = relationshipStatus +
                     " No eligible evidence about the named subject; " +
-                    "used cautious, non-invented draft replies."
+                    "used cautious, non-invented draft replies.",
+                UsedEvidenceFallback = true
             };
         }
 
