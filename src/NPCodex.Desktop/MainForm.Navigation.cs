@@ -456,6 +456,21 @@ public sealed partial class MainForm
         finally { _updatingTree = previous; }
     }
 
+    private string LocationPath(long locationId)
+    {
+        var lookup = _campaignLocations.ToDictionary(l => l.Id);
+        var names = new Stack<string>();
+        var visited = new HashSet<long>();
+        var current = (long?)locationId;
+        while (current is long id && visited.Add(id) &&
+               lookup.TryGetValue(id, out var location))
+        {
+            names.Push(location.Name);
+            current = location.ParentLocationId;
+        }
+        return string.Join(" / ", names);
+    }
+
     private async Task AddChildLocationAsync(long? parentId)
     {
         if (CampaignId is not long campaignId)
@@ -476,7 +491,7 @@ public sealed partial class MainForm
         };
         parents.Items.Add(new CharacterChoice(null, "(Top-level location)"));
         foreach (var loc in _campaignLocations.OrderBy(x => x.Name))
-            parents.Items.Add(new CharacterChoice(loc.Id, loc.Name));
+            parents.Items.Add(new CharacterChoice(loc.Id, LocationPath(loc.Id)));
         parents.SelectedItem = parents.Items.Cast<CharacterChoice>()
             .FirstOrDefault(c => c.Id == parentId) ?? parents.Items[0];
         var description = new TextBox
@@ -535,7 +550,8 @@ public sealed partial class MainForm
         };
         destination.Items.Add(new CharacterChoice(null, "(Unassigned location)"));
         foreach (var location in _campaignLocations.OrderBy(l => l.Name))
-            destination.Items.Add(new CharacterChoice(location.Id, location.Name));
+            destination.Items.Add(new CharacterChoice(
+                location.Id, LocationPath(location.Id)));
         var oldLocationId = _campaignCharacters
             .FirstOrDefault(c => c.Id == characterId)?.CurrentLocationId;
         destination.SelectedItem = destination.Items.Cast<CharacterChoice>()
