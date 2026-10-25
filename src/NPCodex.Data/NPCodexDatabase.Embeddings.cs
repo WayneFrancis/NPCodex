@@ -83,7 +83,8 @@ public sealed partial class NPCodexDatabase
     public async Task<IReadOnlyList<MemoryMatch>> SearchNpcMemoriesAsync(
         long campaignId, long npcId, string embeddingModel, float[] queryEmbedding,
         int maxResults = 5, CancellationToken cancellationToken = default,
-        bool includeSecretMemories = true, int? currentWorldDay = null)
+        bool includeSecretMemories = true, int? currentWorldDay = null,
+        TimeOnly? currentWorldTime = null)
     {
         RequireCampaignId(campaignId);
         if (npcId <= 0)
@@ -108,7 +109,10 @@ public sealed partial class NPCodexDatabase
               AND m.embedding IS NOT NULL
               AND ($6 OR m.is_secret = false)
               AND ($7::integer IS NULL OR m.world_day IS NULL
-                   OR m.world_day <= $7)
+                   OR m.world_day < $7
+                   OR (m.world_day = $7
+                       AND ($8::time IS NULL OR m.world_time IS NULL
+                            OR m.world_time <= $8)))
             ORDER BY m.embedding <=> $4, m.memory_id
             LIMIT $5
             """;
@@ -125,6 +129,11 @@ public sealed partial class NPCodexDatabase
         {
             NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Integer,
             Value = (object?)currentWorldDay ?? DBNull.Value
+        });
+        command.Parameters.Add(new NpgsqlParameter
+        {
+            NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Time,
+            Value = (object?)currentWorldTime ?? DBNull.Value
         });
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
