@@ -916,8 +916,9 @@ character is an NPC. When a **PC answers**, the DM enters the reply
 manually and still approves it as recorded dialogue.
 
 The current pair's approved conversation remains available as local
-generation context, while the **Conversation members** grid below shows
-all approved statements spoken or heard by *any* of the people in the roster.
+generation context. The separate **Conversation History** top-level tab
+contains the **Conversation members** grid showing approved statements spoken
+or heard by *any* of the people in the roster.
 
 ### History and searching
 
