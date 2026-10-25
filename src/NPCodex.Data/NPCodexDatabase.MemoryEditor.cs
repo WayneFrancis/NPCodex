@@ -13,7 +13,8 @@ public sealed partial class NPCodexDatabase
         const string sql = """
             SELECT m.memory_id, m.content, m.importance, m.is_secret,
                    m.memory_type, m.embedding IS NOT NULL, m.created_at,
-                   m.world_day, m.world_time
+                   m.world_day, m.world_time,
+                   m.knowledge_status, m.knowledge_source
             FROM memories m
             JOIN characters c ON c.campaign_id = m.campaign_id
                              AND c.character_id = m.owner_character_id
@@ -33,7 +34,9 @@ public sealed partial class NPCodexDatabase
                 reader.GetBoolean(5), reader.GetDateTime(6))
             {
                 WorldDay = reader.IsDBNull(7) ? null : reader.GetInt32(7),
-                WorldTime = reader.IsDBNull(8) ? null : reader.GetFieldValue<TimeOnly>(8)
+                WorldTime = reader.IsDBNull(8) ? null : reader.GetFieldValue<TimeOnly>(8),
+                KnowledgeStatus = reader.GetString(9),
+                KnowledgeSource = reader.IsDBNull(10) ? null : reader.GetString(10)
             });
         return list;
     }
@@ -47,8 +50,15 @@ public sealed partial class NPCodexDatabase
         long campaignId, long npcId, long? memoryId, string content,
         short importance, bool isSecret, string? expectedContent = null,
         CancellationToken cancellationToken = default,
-        WorldMoment? when = null)
+        WorldMoment? when = null,
+        string knowledgeStatus = MemoryKnowledgeStatus.Recollection,
+        string? knowledgeSource = null)
     {
+        MemoryKnowledgeStatus.Validate(knowledgeStatus);
+        knowledgeSource = string.IsNullOrWhiteSpace(knowledgeSource)
+            ? null : knowledgeSource.Trim();
+        if (knowledgeSource is { Length: > 300 })
+            throw new ArgumentException("Source description must be at most 300 characters.");
         RequireCampaignId(campaignId);
         if (npcId <= 0) throw new ArgumentOutOfRangeException(nameof(npcId));
         if (when is not null && when.Day < 1)
@@ -64,8 +74,9 @@ public sealed partial class NPCodexDatabase
             const string insert = """
                 INSERT INTO memories (campaign_id, owner_character_id, content,
                                      memory_type, importance, is_secret,
-                                     world_day, world_time)
-                SELECT $1, c.character_id, $3, 'manual', $4, $5, $6, $7
+                                     world_day, world_time,
+                                     knowledge_status, knowledge_source)
+                SELECT $1, c.character_id, $3, 'manual', $4, $5, $6, $7, $8, $9
                 FROM characters c
                 WHERE c.campaign_id = $1 AND c.character_id = $2
                   AND c.character_type = 'npc'
@@ -87,6 +98,12 @@ public sealed partial class NPCodexDatabase
                 NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Time,
                 Value = (object?)when?.Time ?? DBNull.Value
             });
+            command.Parameters.AddWithValue(knowledgeStatus);
+            command.Parameters.Add(new NpgsqlParameter
+            {
+                NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Text,
+                Value = (object?)knowledgeSource ?? DBNull.Value
+            });
             var result = await command.ExecuteScalarAsync(cancellationToken);
             return result is long id ? id
                 : throw new InvalidOperationException("NPC not found in this campaign.");
@@ -104,7 +121,9 @@ public sealed partial class NPCodexDatabase
                    world_day = $8,
                    world_time = $9,
                    embedding = CASE WHEN m.content = $4 THEN m.embedding ELSE NULL END,
-                   embedding_model = CASE WHEN m.content = $4 THEN m.embedding_model ELSE NULL END
+                   embedding_model = CASE WHEN m.content = $4 THEN m.embedding_model ELSE NULL END,
+                   knowledge_status = $10,
+                   knowledge_source = $11
             FROM characters c
             WHERE m.campaign_id = $1 AND m.owner_character_id = $2
               AND m.memory_id = $3 AND m.content = $7
@@ -131,6 +150,12 @@ public sealed partial class NPCodexDatabase
             {
                 NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Time,
                 Value = (object?)when?.Time ?? DBNull.Value
+            });
+            command.Parameters.AddWithValue(knowledgeStatus);
+            command.Parameters.Add(new NpgsqlParameter
+            {
+                NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Text,
+                Value = (object?)knowledgeSource ?? DBNull.Value
             });
             var result = await command.ExecuteScalarAsync(cancellationToken);
             return result is long id ? id
