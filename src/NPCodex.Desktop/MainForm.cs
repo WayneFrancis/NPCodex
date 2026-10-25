@@ -354,9 +354,11 @@ public sealed partial class MainForm : Form
             return;
         }
 
-        var world = await _database.GetCampaignWorldAsync(campaignId);
+        var world = await _database.GetCampaignBrowserAsync(campaignId);
         _campaignCharacters = world.Characters;
         _campaignLocations = world.Locations;
+        _treeAliases = (await _database.GetCampaignCharacterNamesAsync(
+            campaignId)).Aliases;
         _ignoreSelectionEvents = true;
         try
         {
