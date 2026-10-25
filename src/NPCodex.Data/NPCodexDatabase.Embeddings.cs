@@ -84,7 +84,7 @@ public sealed partial class NPCodexDatabase
         long campaignId, long npcId, string embeddingModel, float[] queryEmbedding,
         int maxResults = 5, CancellationToken cancellationToken = default,
         bool includeSecretMemories = true, int? currentWorldDay = null,
-        TimeOnly? currentWorldTime = null)
+        TimeOnly? currentWorldTime = null, bool includeCoverStories = false)
     {
         RequireCampaignId(campaignId);
         if (npcId <= 0)
@@ -97,7 +97,8 @@ public sealed partial class NPCodexDatabase
         const string sql = """
             SELECT m.memory_id, m.content, m.importance, m.is_secret,
                    m.embedding <=> $4 AS cosine_distance,
-                   m.world_day, m.world_time
+                   m.world_day, m.world_time,
+                   m.knowledge_status, m.knowledge_source
             FROM memories m
             JOIN characters c
               ON c.campaign_id = m.campaign_id
@@ -108,6 +109,7 @@ public sealed partial class NPCodexDatabase
               AND m.embedding_model = $3
               AND m.embedding IS NOT NULL
               AND ($6 OR m.is_secret = false)
+              AND ($9 OR m.knowledge_status <> 'cover_story')
               AND ($7::integer IS NULL OR m.world_day IS NULL
                    OR m.world_day < $7
                    OR (m.world_day = $7
@@ -135,6 +137,7 @@ public sealed partial class NPCodexDatabase
             NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Time,
             Value = (object?)currentWorldTime ?? DBNull.Value
         });
+        command.Parameters.AddWithValue(includeCoverStories);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
@@ -146,7 +149,9 @@ public sealed partial class NPCodexDatabase
                 reader.GetDouble(4))
             {
                 WorldDay = reader.IsDBNull(5) ? null : reader.GetInt32(5),
-                WorldTime = reader.IsDBNull(6) ? null : reader.GetFieldValue<TimeOnly>(6)
+                WorldTime = reader.IsDBNull(6) ? null : reader.GetFieldValue<TimeOnly>(6),
+                KnowledgeStatus = reader.GetString(7),
+                KnowledgeSource = reader.IsDBNull(8) ? null : reader.GetString(8)
             });
 
         return matches;
