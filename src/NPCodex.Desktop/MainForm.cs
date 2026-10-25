@@ -117,6 +117,7 @@ public sealed partial class MainForm : Form
         _tabs.TabPages.Add(dialogueTab);
         _tabs.TabPages.Add(dialogueHistoryTab);
         _tabs.TabPages.Add(_memoriesTab);
+        _tabs.TabPages.Add(_memorySearchTab);
         _tabs.TabPages.Add(_personalityTab);
         _tabs.TabPages.Add(_aliasesTab);
         _tabs.TabPages.Add(_characterSheetTab);
@@ -217,6 +218,7 @@ public sealed partial class MainForm : Form
         conversation.Controls.Add(saveRow, 0, 7);
 
         BuildMemoryTab();
+        BuildMemorySearchTab();
         BuildPersonalityTab();
         BuildAliasesTab();
         BuildDndSheetTab();
@@ -305,6 +307,7 @@ public sealed partial class MainForm : Form
         WireSceneEvents();
         WireNavigationEvents();
         WireHistoryEvents();
+        WireMemorySearchEvents();
         WireDndSheetEvents();
         WireLocationsTab();
         _addNpcButton.Click += async (_, _) => await RunBusyAsync(() => AddNpcAsync());
@@ -398,6 +401,15 @@ public sealed partial class MainForm : Form
             // A new campaign starts with an empty conversation. The DM chooses
             // who is present by double-clicking them in the location tree.
             _rosterIds.Clear();
+            ResetMemorySearchForCampaign();
+        }
+        else
+        {
+            // Maintain the DM's scoped characters across a tree refresh,
+            // discarding IDs only if their character was deleted.
+            _memorySearchSelectedOwnerIds.RemoveWhere(
+                id => !_campaignCharacters.Any(c => c.Id == id));
+            PopulateMemorySearchCharacters();
         }
         RebuildConversationRoster();
         PopulateLocationTree();
