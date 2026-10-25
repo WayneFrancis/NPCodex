@@ -24,6 +24,8 @@ public sealed partial class MainForm
     private int _dictationHypothesisCount;
     private long _lastDictationMeterAtTicks;
     private string _dictationLastSession = "No dictation attempt completed yet.";
+    private string _dictationLastHypothesis = "(none)";
+    private string _dictationLastRejectedDetails = "(none)";
 
     private void AttachDictationToTextBoxes(Control root)
     {
@@ -121,6 +123,8 @@ public sealed partial class MainForm
             _dictationAudioSamples = _dictationPeakLevel = 0;
             _dictationDetectedCount = _dictationRejectedCount = 0;
             _dictationAcceptedCount = _dictationHypothesisCount = 0;
+            _lastDictationHypothesis = "(none)";
+            _dictationLastRejectedDetails = "(none)";
             _lastDictationMeterAtTicks = 0;
             engine.InitialSilenceTimeout = TimeSpan.FromSeconds(30);
             engine.BabbleTimeout = TimeSpan.FromSeconds(10);
@@ -153,17 +157,29 @@ public sealed partial class MainForm
             engine.SpeechHypothesized += (_, e) =>
             {
                 System.Threading.Interlocked.Increment(ref _dictationHypothesisCount);
+                _dictationLastHypothesis =
+                    $"{e.Result.Text} (confidence {e.Result.Confidence:P0})";
                 ReportDictationStatus(activeEngine,
-                    "Speech hypothesis: " + e.Result.Text);
+                    "Speech hypothesis: " + _dictationLastHypothesis);
             };
             engine.SpeechRecognitionRejected += (_, e) =>
             {
                 System.Threading.Interlocked.Increment(ref _dictationRejectedCount);
-                var recognized = e.Result?.Text;
-                var detail = !string.IsNullOrWhiteSpace(recognized)
-                    ? $"Heard '{recognized}', but the recognizer rejected it."
-                    : "Speech heard, but no words matched the recognition grammar.";
-                ReportDictationStatus(activeEngine, detail);
+                var result = e.Result;
+                var best = result is null
+                    ? "(no phrase)"
+                    : $"'{result.Text}' (confidence {result.Confidence:P0})";
+                var alternatives = result?.Alternates
+                    .Take(3)
+                    .Select(a => $"'{a.Text}' ({a.Confidence:P0})")
+                    .ToArray() ?? Array.Empty<string>();
+                _dictationLastRejectedDetails = "Best rejected: " + best +
+                    (alternatives.Length > 0
+                        ? "\nAlternatives: " + string.Join("; ", alternatives)
+                        : "\nNo alternate phrases provided.");
+                ReportDictationStatus(activeEngine,
+                    "Recognition rejected: " + best +
+                    ". Open Speech recognizer diagnostics for alternatives.");
             };
             engine.AudioSignalProblemOccurred += (_, e) =>
                 ReportDictationStatus(activeEngine,
@@ -289,6 +305,8 @@ public sealed partial class MainForm
                 $"Windows UI language: {current.Name}\n" +
                 $"Installed System.Speech recognizers: {installed.Count}\n" +
                 description + "\n\nLast session:\n" + _dictationLastSession +
+                "\nLast hypothesis: " + _dictationLastHypothesis +
+                "\n" + _dictationLastRejectedDetails +
                 "\n\nIf the microphone level stays 0 and Audio updates = 0, " +
                 "System.Speech may not be receiving audio from the default " +
                 "capture device even though Windows+H works. If levels change " +
