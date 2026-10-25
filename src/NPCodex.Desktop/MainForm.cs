@@ -444,8 +444,18 @@ public sealed partial class MainForm : Form
         var sb = new System.Text.StringBuilder();
         foreach (var turn in _approvedTurns)
         {
-            sb.AppendLine($"Player: {turn.PlayerLine}");
-            sb.AppendLine($"NPC: {turn.NpcReply}");
+            var speaker = turn.SpeakerCharacterId is long speakerId
+                ? _campaignCharacters.FirstOrDefault(c => c.Id == speakerId)?.Name
+                  ?? $"Character #{speakerId}"
+                : "Unspecified speaker";
+            var respondingNpc = _campaignCharacters.FirstOrDefault(c => c.Id == npcId)?.Name
+                ?? $"NPC #{npcId}";
+            sb.AppendLine(turn.WorldDay is int day
+                ? $"[Day {day}" +
+                  (turn.WorldTime is TimeOnly time ? $" at {time:HH:mm}" : "") + "]"
+                : "[Game date not recorded]");
+            sb.AppendLine($"{speaker}: {turn.PlayerLine}");
+            sb.AppendLine($"{respondingNpc}: {turn.NpcReply}");
             sb.AppendLine();
         }
         _history.Text = sb.ToString();
