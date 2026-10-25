@@ -7,7 +7,7 @@ public sealed partial class MainForm
 {
     private readonly Button _addNpcButton = new() { Text = "Add NPC", AutoSize = true };
 
-    private async Task AddNpcAsync()
+    private async Task AddNpcAsync(long? preselectedLocationId = null)
     {
         if (CampaignId is not long campaignId)
             throw new InvalidOperationException("Select a campaign before creating an NPC.");
@@ -56,10 +56,14 @@ public sealed partial class MainForm
 
         var npcId = await _database.CreateCharacterAsync(
             campaignId, name.Text.Trim(), "npc",
+            currentLocationId: preselectedLocationId,
             occupation: string.IsNullOrWhiteSpace(occupation.Text)
                 ? null : occupation.Text.Trim());
 
         await LoadCharactersAsync();
+        if (!_rosterIds.Contains(npcId)) _rosterIds.Add(npcId);
+        RebuildConversationRoster();
+        PopulateLocationTree();
         _ignoreSelectionEvents = true;
         try
         {
