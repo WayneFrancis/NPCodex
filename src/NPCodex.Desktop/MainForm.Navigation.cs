@@ -198,7 +198,11 @@ public sealed partial class MainForm
             {
                 _rosterIds.Remove(id);
                 RebuildConversationRoster();
-                await RunBusyAsync(LoadRosterHistoryAsync);
+                await RunBusyAsync(async () =>
+                {
+                    await LoadConversationAsync();
+                    await LoadRosterHistoryAsync();
+                });
             }
         };
         _privateExchange.CheckedChanged += (_, _) =>
@@ -460,7 +464,11 @@ public sealed partial class MainForm
         if (!_rosterIds.Contains(characterId))
             _rosterIds.Add(characterId);
         RebuildConversationRoster();
-        await RunBusyAsync(LoadRosterHistoryAsync);
+        await RunBusyAsync(async () =>
+        {
+            await LoadConversationAsync();
+            await LoadRosterHistoryAsync();
+        });
     }
 
     private void RebuildConversationRoster()
