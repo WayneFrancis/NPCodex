@@ -170,7 +170,12 @@ public sealed partial class MainForm
                 await RunBusyAsync(LoadRosterHistoryAsync);
             }
         };
-        _privateExchange.CheckedChanged += (_, _) => UpdateRecipientOptions();
+        _privateExchange.CheckedChanged += (_, _) =>
+        {
+            // Restore normal automatic hearing when leaving whisper mode.
+            if (!_privateExchange.Checked) _memoryRecipients.Items.Clear();
+            UpdateRecipientOptions();
+        };
     }
 
     private async Task SelectEditableCharacterAsync(long id)
