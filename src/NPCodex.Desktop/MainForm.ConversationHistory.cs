@@ -43,9 +43,12 @@ public sealed partial class MainForm
         {
             Dock = DockStyle.Fill, RowCount = 2, ColumnCount = 1
         };
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 45));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 85));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        var searchBar = new FlowLayoutPanel { Dock = DockStyle.Fill };
+        var searchBar = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill, WrapContents = true, AutoScroll = true
+        };
         _statementSearchMode.Items.AddRange(["Text / keywords", "Meaning (vectors)"]);
         _statementSearchMode.SelectedIndex = 0;
         searchBar.Controls.Add(_statementSearch);
