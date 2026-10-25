@@ -35,14 +35,19 @@ public sealed partial class NPCodexDatabase
             SELECT st.statement_id, st.world_day, st.world_time,
                    COALESCE(speaker.name, '(Unknown speaker)'),
                    COALESCE((
-                       SELECT string_agg(hearer.name, ', ' ORDER BY hearer.name)
-                       FROM statement_hearers sh
-                       JOIN characters hearer
-                         ON hearer.campaign_id = sh.campaign_id
-                        AND hearer.character_id = sh.character_id
-                       WHERE sh.campaign_id = st.campaign_id
-                         AND sh.statement_id = st.statement_id
-                   ), '(No other listeners)'),
+                       SELECT string_agg(person.name, ', ' ORDER BY person.name, person.character_id)
+                       FROM characters person
+                       WHERE person.campaign_id = st.campaign_id
+                         AND (
+                           person.character_id = st.speaker_character_id
+                           OR EXISTS (
+                             SELECT 1 FROM statement_hearers sh
+                             WHERE sh.campaign_id = st.campaign_id
+                               AND sh.statement_id = st.statement_id
+                               AND sh.character_id = person.character_id
+                           )
+                         )
+                   ), '(Unknown participants)'),
                    st.content,
                    CASE WHEN $3::text IS NOT NULL
                        THEN ts_rank_cd(to_tsvector('simple', st.content),
