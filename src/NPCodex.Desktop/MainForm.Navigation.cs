@@ -154,7 +154,8 @@ public sealed partial class MainForm
         };
         _campaignTree.NodeMouseDoubleClick += async (_, e) =>
         {
-            if (e.Node.Tag is CharacterInfo character)
+            if (_tabs.SelectedTab?.Text == "Dialogue" &&
+                e.Node.Tag is CharacterInfo character)
                 await AddToConversationAsync(character.Id);
         };
         _tabs.SelectedIndexChanged += async (_, _) =>
