@@ -87,6 +87,7 @@ public sealed partial class MainForm
         dialog.CancelButton = cancel;
         dialog.Controls.Add(fields);
         dialog.ActiveControl = name;
+        AttachDictationToTextBoxes(dialog);
 
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
         if (string.IsNullOrWhiteSpace(name.Text))
