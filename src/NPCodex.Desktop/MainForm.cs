@@ -239,6 +239,12 @@ public sealed partial class MainForm : Form
         header.Controls.Add(_importance);
         header.Controls.Add(_isSecret);
         header.Controls.Add(_memoryUseWorldDate);
+        header.Controls.Add(new Label { Text = "Day:", AutoSize = true,
+            Padding = new Padding(5, 6, 0, 0) });
+        header.Controls.Add(_memoryWorldDay);
+        header.Controls.Add(new Label { Text = "Time:", AutoSize = true,
+            Padding = new Padding(5, 6, 0, 0) });
+        header.Controls.Add(_memoryWorldTime);
         header.Controls.Add(new Label { Text = "Edit the NPC's actual knowledge, not the AI's guesses.",
             AutoSize = true, Padding = new Padding(8, 6, 0, 0) });
         editorLayout.Controls.Add(header, 0, 0);
@@ -479,9 +485,10 @@ public sealed partial class MainForm : Form
         _isSecret.Checked = item.Memory.IsSecret;
         _memoryUseWorldDate.Checked = item.Memory.WorldDay is not null;
         if (item.Memory.WorldDay is int day)
-            _worldDay.Value = Math.Clamp(day, (int)_worldDay.Minimum, (int)_worldDay.Maximum);
+            _memoryWorldDay.Value = Math.Clamp(
+                day, (int)_memoryWorldDay.Minimum, (int)_memoryWorldDay.Maximum);
         if (item.Memory.WorldTime is TimeOnly worldTime)
-            _worldTime.Value = DateTime.Today.Add(worldTime.ToTimeSpan());
+            _memoryWorldTime.Value = DateTime.Today.Add(worldTime.ToTimeSpan());
     }
 
     private void ClearMemoryEditor()
@@ -492,6 +499,8 @@ public sealed partial class MainForm : Form
         _importance.Value = 3;
         _isSecret.Checked = false;
         _memoryUseWorldDate.Checked = true;
+        _memoryWorldDay.Value = _worldDay.Value;
+        _memoryWorldTime.Value = _worldTime.Value;
         _memoryEditor.Focus();
     }
 
@@ -506,7 +515,7 @@ public sealed partial class MainForm : Form
             campaignId, npcId, _editingMemory?.Id,
             _memoryEditor.Text, (short)_importance.Value,
             _isSecret.Checked, _editingMemory?.Content,
-            when: _memoryUseWorldDate.Checked ? CurrentWorldMoment : null);
+            when: _memoryUseWorldDate.Checked ? MemoryWorldMoment : null);
 
         var embedded = await EmbedSavedMemoryAsync(campaignId, memoryId);
         await LoadMemoriesAsync(memoryId);
@@ -787,7 +796,9 @@ public sealed partial class MainForm : Form
             _asking.Enabled = _answering.Enabled =
             _removeRosterMember.Enabled = _privateExchange.Enabled =
             _sheetSave.Enabled = _statementSearch.Enabled =
-            _searchStatements.Enabled = _refreshStatements.Enabled = false;
+            _searchStatements.Enabled = _refreshStatements.Enabled =
+            _memoryWorldDay.Enabled = _memoryWorldTime.Enabled =
+            _addPcButton.Enabled = false;
         UseWaitCursor = true;
         try { await operation(); }
         catch (Exception ex)
@@ -823,7 +834,9 @@ public sealed partial class MainForm : Form
             _asking.Enabled = _answering.Enabled =
             _removeRosterMember.Enabled = _privateExchange.Enabled =
             _sheetSave.Enabled = _statementSearch.Enabled =
-            _searchStatements.Enabled = _refreshStatements.Enabled = true;
+            _searchStatements.Enabled = _refreshStatements.Enabled =
+            _memoryWorldDay.Enabled = _memoryWorldTime.Enabled =
+            _addPcButton.Enabled = true;
             _suggestNpcOpening.Enabled = CampaignId is not null;
             _createMemoryOnApproval.Enabled = SelectedResponderIsNpc;
         }
