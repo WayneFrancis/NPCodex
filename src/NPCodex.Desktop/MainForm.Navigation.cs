@@ -431,28 +431,59 @@ public sealed partial class MainForm
             throw new InvalidOperationException("Select a campaign.");
         using var form = new Form
         {
-            Text = "Add location", Size = new Size(430, 200),
+            Text = "Add location", Size = new Size(540, 310),
             StartPosition = FormStartPosition.CenterParent,
-            FormBorderStyle = FormBorderStyle.FixedDialog
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            MaximizeBox = false, MinimizeBox = false
         };
-        var name = new TextBox { Left = 115, Top = 20, Width = 270 };
-        var kind = new TextBox { Left = 115, Top = 60, Width = 270, Text = "place" };
-        var ok = new Button { Left = 260, Top = 105, Text = "Create",
-            DialogResult = DialogResult.OK };
+        var name = new TextBox { Left = 145, Top = 18, Width = 350 };
+        var kind = new TextBox { Left = 145, Top = 57, Width = 350, Text = "place" };
+        var parents = new ComboBox
+        {
+            Left = 145, Top = 96, Width = 350,
+            DropDownStyle = ComboBoxStyle.DropDownList
+        };
+        parents.Items.Add(new CharacterChoice(null, "(Top-level location)"));
+        foreach (var loc in _campaignLocations.OrderBy(x => x.Name))
+            parents.Items.Add(new CharacterChoice(loc.Id, loc.Name));
+        parents.SelectedItem = parents.Items.Cast<CharacterChoice>()
+            .FirstOrDefault(c => c.Id == parentId) ?? parents.Items[0];
+        var description = new TextBox
+        {
+            Left = 145, Top = 135, Width = 350, Height = 65,
+            Multiline = true, ScrollBars = ScrollBars.Vertical
+        };
+        var ok = new Button
+        {
+            Left = 395, Top = 217, Text = "Create",
+            DialogResult = DialogResult.OK
+        };
         form.Controls.AddRange([
-            new Label { Text = "Location", Left = 15, Top = 23, Width = 95 },
+            new Label { Text = "Name", Left = 15, Top = 22, Width = 125 },
             name,
-            new Label { Text = "Type", Left = 15, Top = 63, Width = 95 },
-            kind, ok
+            new Label { Text = "Type", Left = 15, Top = 61, Width = 125 },
+            kind,
+            new Label { Text = "Parent", Left = 15, Top = 100, Width = 125 },
+            parents,
+            new Label { Text = "Description", Left = 15, Top = 138, Width = 125 },
+            description, ok
         ]);
         form.AcceptButton = ok;
+        form.ActiveControl = name;
         if (form.ShowDialog(this) != DialogResult.OK) return;
         if (string.IsNullOrWhiteSpace(name.Text))
             throw new InvalidOperationException("Enter a location name.");
-        await _database.CreateLocationAsync(
-            campaignId, name.Text, string.IsNullOrWhiteSpace(kind.Text)
-                ? "place" : kind.Text, parentId);
+        var createdId = await _database.CreateLocationAsync(
+            campaignId, name.Text.Trim(),
+            string.IsNullOrWhiteSpace(kind.Text) ? "place" : kind.Text.Trim(),
+            (parents.SelectedItem as CharacterChoice)?.Id,
+            string.IsNullOrWhiteSpace(description.Text) ? null : description.Text.Trim());
         await LoadCharactersAsync();
+        // A new root must be visible immediately even if the current filter
+        // would otherwise hide it.
+        _treeFilter.Clear();
+        SelectTreeLocation(createdId);
+        _status.Text = $"Created location '{name.Text.Trim()}'.";
     }
 
     private async Task MoveTreeCharacterAsync(long characterId)
