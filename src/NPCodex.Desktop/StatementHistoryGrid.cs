@@ -20,6 +20,7 @@ internal sealed class StatementHistoryGrid : UserControl
     private int _sortColumn = -1;
     private bool _sortDescending;
     private readonly bool _showRelevance;
+    public event Action<long>? EditExchangeRequested;
 
     public StatementHistoryGrid(bool showRelevance)
     {
@@ -37,6 +38,7 @@ internal sealed class StatementHistoryGrid : UserControl
         // Hidden numeric sort key keeps "Day 2" before "Day 10" while showing
         // natural, human-readable campaign dates in the visible grid.
         _table.Columns.Add("Chronology sort", typeof(long));
+        _table.Columns.Add("Statement ID", typeof(long));
 
         var group = new TableLayoutPanel
         {
@@ -73,6 +75,26 @@ internal sealed class StatementHistoryGrid : UserControl
         _results.AutoGenerateColumns = false;
         _results.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
         _results.DataSource = _table.DefaultView;
+        var editMenu = new ContextMenuStrip();
+        var editMoment = new ToolStripMenuItem("Edit exchange date/time...");
+        editMoment.Click += (_, _) => RequestEditCurrentStatement();
+        editMenu.Items.Add(editMoment);
+        editMenu.Opening += (_, e) =>
+        {
+            editMoment.Enabled = SelectedStatementId() is not null;
+            if (!editMoment.Enabled) e.Cancel = true;
+        };
+        _results.ContextMenuStrip = editMenu;
+        _results.CellDoubleClick += (_, e) =>
+        {
+            if (e.RowIndex >= 0) RequestEditCurrentStatement();
+        };
+        _results.CellMouseDown += (_, e) =>
+        {
+            if (e.Button == MouseButtons.Right && e.RowIndex >= 0)
+                _results.CurrentCell = _results.Rows[e.RowIndex].Cells[
+                    Math.Max(0, e.ColumnIndex)];
+        };
 
         double[] weights = showRelevance
             ? [92, 110, 155, 270, 63]
@@ -161,15 +183,28 @@ internal sealed class StatementHistoryGrid : UserControl
                     : -1L;
                 if (_showRelevance)
                     _table.Rows.Add(date, line.Speaker, line.Hearers,
-                        line.Content, Math.Round(line.Relevance, 3), chronological);
+                        line.Content, Math.Round(line.Relevance, 3), chronological, line.Id);
                 else
                     _table.Rows.Add(date, line.Speaker, line.Hearers,
-                        line.Content, chronological);
+                        line.Content, chronological, line.Id);
             }
         }
         finally { _table.EndLoadData(); }
         ApplyFilters();
         SyncWidths();
+    }
+
+    private long? SelectedStatementId()
+    {
+        if (_results.CurrentRow?.DataBoundItem is not DataRowView row)
+            return null;
+        return row.Row["Statement ID"] is long id ? id : null;
+    }
+
+    private void RequestEditCurrentStatement()
+    {
+        if (SelectedStatementId() is long id)
+            EditExchangeRequested?.Invoke(id);
     }
 
     private void OnEditingFilterChanged(object? sender, EventArgs args)
