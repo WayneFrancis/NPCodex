@@ -118,6 +118,7 @@ public sealed partial class MainForm : Form
         _tabs.TabPages.Add(_personalityTab);
         _tabs.TabPages.Add(_aliasesTab);
         _tabs.TabPages.Add(_characterSheetTab);
+        _tabs.TabPages.Add(_locationsTab);
         split.Panel2.Controls.Add(_tabs);
 
         var conversation = new TableLayoutPanel
@@ -217,6 +218,7 @@ public sealed partial class MainForm : Form
         BuildPersonalityTab();
         BuildAliasesTab();
         BuildDndSheetTab();
+        BuildLocationsTab();
     }
 
     private void BuildMemoryTab()
@@ -302,6 +304,7 @@ public sealed partial class MainForm : Form
         WireNavigationEvents();
         WireHistoryEvents();
         WireDndSheetEvents();
+        WireLocationsTab();
         _addNpcButton.Click += async (_, _) => await RunBusyAsync(() => AddNpcAsync());
         _addPcButton.Click += async (_, _) => await RunBusyAsync(() => AddPcAsync());
     }
@@ -382,6 +385,13 @@ public sealed partial class MainForm : Form
             _savedSearches.Clear();
             _sheetTargetId = null;
             _sheetCharacter.Text = "Select a character in this campaign's tree";
+            _editLocationId = null;
+            _locationSelected.Text = "Select a location in this campaign's tree";
+            _locationName.Clear();
+            _locationType.Clear();
+            _locationDescription.Clear();
+            _locationParent.Items.Clear();
+            _saveLocation.Enabled = _deleteLocation.Enabled = false;
             _rosterCampaignId = campaignId;
             _rosterIds.Clear();
             var initialNpc = world.Characters.FirstOrDefault(c => c.Type == "npc");
@@ -810,7 +820,8 @@ public sealed partial class MainForm : Form
             _sheetSave.Enabled = _statementSearch.Enabled =
             _searchStatements.Enabled = _refreshStatements.Enabled =
             _memoryWorldDay.Enabled = _memoryWorldTime.Enabled =
-            _addPcButton.Enabled = _addRootLocation.Enabled = false;
+            _addPcButton.Enabled = _addRootLocation.Enabled =
+            _saveLocation.Enabled = _deleteLocation.Enabled = false;
         UseWaitCursor = true;
         try { await operation(); }
         catch (Exception ex)
@@ -849,6 +860,7 @@ public sealed partial class MainForm : Form
             _searchStatements.Enabled = _refreshStatements.Enabled =
             _memoryWorldDay.Enabled = _memoryWorldTime.Enabled =
             _addPcButton.Enabled = _addRootLocation.Enabled = true;
+            _saveLocation.Enabled = _deleteLocation.Enabled = _editLocationId is not null;
             _suggestNpcOpening.Enabled = CampaignId is not null;
             _createMemoryOnApproval.Enabled = SelectedResponderIsNpc;
         }
