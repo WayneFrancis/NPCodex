@@ -880,8 +880,10 @@ dotnet run --project src/NPCodex.Desktop
 - Left-hand location tree uses `locations.parent_location_id`. A character
   is shown beneath their `current_location_id`. Unassigned characters appear
   under an Unassigned location node.
-- Filter the tree by character, occupation or a containing location. A matching
-  character remains visible with its containing location hierarchy.
+- Filter the tree by character, saved alias, occupation or a containing
+  location. A matching character remains visible with its containing location
+  hierarchy. The tree loads locations and character summaries without
+  scanning all campaign interactions and memories.
 - **Single-click** a character in the tree while on a character-editing tab
   to load its existing editor / D&D sheet; this does not change the dialogue
   speaker or respondent.
@@ -889,7 +891,9 @@ dotnet run --project src/NPCodex.Desktop
   conversation roster. Double-clicking again does not duplicate them.
 - Right-click a location to **Add NPC here**, **Add PC here**, or
   **Add child location**. The new character inherits the selected
-  location automatically.
+  location automatically. The **Add location** toolbar button creates a
+  top-level location; right-click an existing character and choose
+  **Move this character** to change its current location.
 - The new NPC/PC creator takes name, occupation/role, D&D species/ancestry,
   class and level. The **D&D Character Sheet** tab supports six ability
   scores (and their modifiers), AC, HP, speed, background, alignment,
