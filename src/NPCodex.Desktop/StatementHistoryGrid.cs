@@ -184,8 +184,10 @@ internal sealed class StatementHistoryGrid : UserControl
 
     private void ApplyFilters()
     {
-        if (_filter.IsCurrentCellInEditMode && _filter.EditingControl is TextBox input)
-            _filters[_filter.CurrentCell.ColumnIndex] = input.Text.Trim();
+        if (_filter.CurrentCell is { } currentCell &&
+            _filter.IsCurrentCellInEditMode &&
+            _filter.EditingControl is TextBox input)
+            _filters[currentCell.ColumnIndex] = input.Text.Trim();
         else
             for (var col = 0; col < _filter.Columns.Count; col++)
                 _filters[col] = _filter.Rows[0].Cells[col].Value?.ToString()?.Trim() ?? "";
