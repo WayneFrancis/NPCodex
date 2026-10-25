@@ -592,10 +592,14 @@ public sealed partial class MainForm : Form
         _latestOptions = choices;
         var fixedCount = choices.Options.Count(o => o.SpeakerWordingAdjusted);
         var speakerWarnings = choices.Options.Count(o => o.NeedsSpeakerReview);
+        var disclosureWarnings = choices.Options.Count(o => o.NeedsDisclosureReview);
         _relationshipStatus.Text = choices.RelationshipStatus +
             (fixedCount > 0 ? $" Corrected speaker wording in {fixedCount} draft(s)." : "") +
             (speakerWarnings > 0
                 ? $" CHECK SPEAKER REFERENCES in {speakerWarnings} draft(s) before approving."
+                : "") +
+            (disclosureWarnings > 0
+                ? $" {disclosureWarnings} candidate(s) have similar disclosures: edit or retry."
                 : "");
         for (var i = 0; i < choices.Options.Count; i++)
         {
@@ -619,6 +623,9 @@ public sealed partial class MainForm : Form
                 : fixedCount > 0
                     ? $"Corrected third-person speaker references in {fixedCount} draft(s). "
                     : "") +
+            (disclosureWarnings > 0
+                ? $"Check {disclosureWarnings} near-duplicate dialogue draft(s). "
+                : "") +
             "Nothing saved.";
     }
 
