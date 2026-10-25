@@ -695,6 +695,23 @@ public sealed partial class MainForm
         _createMemoryOnApproval.Enabled = SelectedResponderIsNpc;
         if (!SelectedResponderIsNpc) _createMemoryOnApproval.Checked = false;
         _generate.Enabled = SelectedResponderIsNpc || ReplyAll;
+        if (ReplyAll)
+            _relationshipStatus.Text = "Question directed to everyone: the AI will choose an NPC present to answer.";
+        else if (ReplyCharacterId is long answeringId &&
+                 !SelectedResponderIsNpc)
+        {
+            var characterName = _campaignCharacters
+                .FirstOrDefault(c => c.Id == answeringId)?.Name ?? "Selected character";
+            _relationshipStatus.Text =
+                $"{characterName} is a player character. AI replies are disabled. " +
+                "Write the response in 'Or write your own dialogue', select it, then Approve.";
+        }
+        else if (SelectedResponderIsNpc)
+            _relationshipStatus.Text =
+                "NPC answering: Generate 3 replies is available, or write your own response.";
+        else
+            _relationshipStatus.Text =
+                "Select an answering NPC to generate dialogue, or a player character to answer manually.";
         _suggestNpcOpening.Enabled = SelectedResponderIsNpc &&
             PlayerId is long speakerId && _campaignCharacters.Any(c =>
                 c.Id == speakerId && c.Type == "npc");
