@@ -993,3 +993,82 @@ exchange only.
 These commits were written to the repository and reviewed statically.
 They still need `dotnet build` and runtime/database verification on
 Windows. Please report the first build error verbatim if one appears.
+
+
+## Location tree reliability and maintenance (Phase 10 follow-up)
+
+This update **does not require another database migration**. The existing
+`locations.parent_location_id` field already supports nested regions,
+districts, buildings and rooms.
+
+After pulling, build and run:
+
+```powershell
+cd D:\dev\NPCodex
+git pull --ff-only
+dotnet build NPCodex.slnx
+dotnet run --project src/NPCodex.Desktop
+```
+
+The location tree now builds its roots and child nodes in separate passes
+rather than sorting an already constructed tree. A new location shows
+immediately, and a permanent **Unassigned** node is always visible (even
+with zero unassigned characters). Filtering continues to match locations,
+character names, occupations and saved aliases; matching a location also
+includes its descendants.
+
+### Creating and editing locations
+
+- **Add location** opens a dialog with name, type, **optional parent**
+  (top-level by default) and description. Parent choices show their
+  full location paths to avoid ambiguity between similarly named places.
+- **Add child location** on a location's right-click menu opens the same
+  dialog with that location preselected as parent.
+- Right-click a location and choose **Edit location details** to open the
+  **Locations** tab. You can rename the place, change its type, update its
+  description, and choose a different valid parent.
+- **Drag a character onto a location** to move them there. Drag them onto
+  **Unassigned** or empty tree space to clear their current location.
+  **Drag a location onto another location** to move the entire subtree.
+  Dragging a location onto Unassigned / empty space makes it top-level.
+- Cycles are disallowed both in the UI and in PostgreSQL: an ancestor
+  cannot be placed inside its own descendant.
+
+### Deleting a location and children
+
+Right-click a location and select **Delete location and children**. The
+application counts its subtree, assigned characters and historical
+interaction location links, and asks for an explicit irreversible
+confirmation with **No** as default.
+
+If confirmed, the application removes the selected location and **all**
+descendant locations **in a single transaction**. Characters are *not*
+deleted: they become Unassigned. Stored interactions, statements, dialogues
+and memories remain intact, though an interaction directly linked to a
+deleted location loses that location ID. Location-specific character roles
+associated with deleted places are deleted, since those assignments no
+longer exist. Move any child locations you want to keep to another parent
+before using Delete. Other campaigns are unaffected.
+
+### Renaming and historical memories
+
+Locations and their relationships use immutable numeric IDs, so renaming
+a location does **not** break their foreign-key links, even when the place
+already contains many characters. However, existing approved dialogue and
+saved memories are historical free text. They are **not rewritten** when
+you rename a location; an NPC may still recall the old name. Future
+location-alias and location-history support can explicitly represent former
+names without altering what characters actually said.
+
+The Locations tab currently manages name/type/parent/description.
+Structured items, containers, inventories, and location-specific histories
+can be added to that tab in a later phase.
+
+### Dialogue reminder
+
+When **Mira is Asking** and **Rowan is Answering**, the **Generate 3 replies**
+button is intentionally disabled: Rowan is a player character. Write
+Rowan's reply manually in the dialogue editor, choose the manual reply
+option, then approve it. Selecting **Rowan Asking → Mira Answering** enables
+AI suggestions. A status line next to the Generate button now explains
+the distinction so the disabled state is not mysterious.
