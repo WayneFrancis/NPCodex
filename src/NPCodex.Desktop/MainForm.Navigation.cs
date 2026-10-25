@@ -533,6 +533,7 @@ public sealed partial class MainForm
         ]);
         form.AcceptButton = ok;
         form.ActiveControl = name;
+        AttachDictationToTextBoxes(form);
         if (form.ShowDialog(this) != DialogResult.OK) return;
         if (string.IsNullOrWhiteSpace(name.Text))
             throw new InvalidOperationException("Enter a location name.");
