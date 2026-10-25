@@ -97,8 +97,9 @@ public sealed class NpcDialogueService
             currentWorldTime: currentMoment?.Time,
             includeCoverStories: allowPreparedLies);
         var namedSubjects = NpcEvidenceScope.NamedSubjects(playerSays);
-        var memories = NpcEvidenceScope.FilterNamedSubject(
-            candidateMemories, namedSubjects, playerSays).Take(5).ToArray();
+        var topicEligible = NpcEvidenceScope.FilterNamedSubject(
+            candidateMemories, namedSubjects, playerSays);
+        var memories = topicEligible.Take(5).ToArray();
 
         // Rewinding the in-world clock must not give Qwen conversations
         // that happened later, even if the UI still shows those exchanges.
@@ -178,7 +179,7 @@ public sealed class NpcDialogueService
             relationshipStatus += " Referenced NPCs: " +
                 string.Join(", ", referencedNpcRelationships.Select(r => r.TargetName)) + ".";
 
-        var excludedAsOffTopic = candidateMemories.Count - memories.Length;
+        var excludedAsOffTopic = candidateMemories.Count - topicEligible.Count;
         if (namedSubjects.Count > 0)
             relationshipStatus +=
                 $" Topic evidence: {memories.Length} relevant memory/memories; " +
