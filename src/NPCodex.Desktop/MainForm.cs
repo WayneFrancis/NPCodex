@@ -664,7 +664,10 @@ public sealed partial class MainForm : Form
                       ") " : "(undated) ") +
                 $"distance {source.CosineDistance:F3}: {source.Content}");
 
-        _status.Text =
+        _status.Text = choices.UsedEvidenceFallback
+            ? "No on-topic evidence at this campaign time: prepared cautious " +
+              "editable drafts without calling the chat model. Nothing saved."
+            :
             $"Generated {choices.Options.Count} suggestions with {choices.ModelName}. " +
             (speakerWarnings > 0
                 ? $"{speakerWarnings} draft(s) may incorrectly refer to the selected PC in third person; review before approval. "
