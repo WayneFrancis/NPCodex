@@ -123,7 +123,7 @@ public sealed partial class MainForm
             _dictationAudioSamples = _dictationPeakLevel = 0;
             _dictationDetectedCount = _dictationRejectedCount = 0;
             _dictationAcceptedCount = _dictationHypothesisCount = 0;
-            _lastDictationHypothesis = "(none)";
+            _dictationLastHypothesis = "(none)";
             _dictationLastRejectedDetails = "(none)";
             _lastDictationMeterAtTicks = 0;
             engine.InitialSilenceTimeout = TimeSpan.FromSeconds(30);
