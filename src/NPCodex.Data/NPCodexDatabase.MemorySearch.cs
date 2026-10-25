@@ -27,7 +27,8 @@ public sealed partial class NPCodexDatabase
                    m.world_day, m.world_time, m.embedding IS NOT NULL,
                    CASE WHEN $3::text IS NULL THEN 0.0
                         ELSE ts_rank_cd(to_tsvector('simple', m.content),
-                          websearch_to_tsquery('simple', $3::text)) END AS relevance
+                          websearch_to_tsquery('simple', $3::text)) END AS relevance,
+                   m.knowledge_status, m.knowledge_source
             FROM memories m
             JOIN characters c ON c.campaign_id = m.campaign_id
                              AND c.character_id = m.owner_character_id
@@ -80,7 +81,8 @@ public sealed partial class NPCodexDatabase
             SELECT m.memory_id, m.owner_character_id, c.name, c.character_type,
                    m.content, m.memory_type, m.importance, m.is_secret,
                    m.world_day, m.world_time, true AS has_embedding,
-                   (1.0 - (m.embedding <=> $3))::double precision AS relevance
+                   (1.0 - (m.embedding <=> $3))::double precision AS relevance,
+                   m.knowledge_status, m.knowledge_source
             FROM memories m
             JOIN characters c ON c.campaign_id = m.campaign_id
                              AND c.character_id = m.owner_character_id
@@ -117,7 +119,11 @@ public sealed partial class NPCodexDatabase
                 reader.GetString(5), reader.GetInt16(6), reader.GetBoolean(7),
                 reader.IsDBNull(8) ? null : reader.GetInt32(8),
                 reader.IsDBNull(9) ? null : reader.GetFieldValue<TimeOnly>(9),
-                reader.GetBoolean(10), Convert.ToDouble(reader.GetValue(11))));
+                reader.GetBoolean(10), Convert.ToDouble(reader.GetValue(11)))
+            {
+                KnowledgeStatus = reader.GetString(12),
+                KnowledgeSource = reader.IsDBNull(13) ? null : reader.GetString(13)
+            });
         return results;
     }
 }
