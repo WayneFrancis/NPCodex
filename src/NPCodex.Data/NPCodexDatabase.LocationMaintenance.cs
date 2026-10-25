@@ -116,7 +116,9 @@ public sealed partial class NPCodexDatabase
         if (!await reader.ReadAsync(cancellationToken))
             return new LocationDeletionImpact(0, 0, 0);
         return new LocationDeletionImpact(
-            reader.GetInt32(0), reader.GetInt32(1), reader.GetInt32(2));
+            checked((int)reader.GetInt64(0)),
+            checked((int)reader.GetInt64(1)),
+            checked((int)reader.GetInt64(2)));
     }
 
     /// <summary>
@@ -135,8 +137,11 @@ public sealed partial class NPCodexDatabase
         async Task<int> ExecuteAsync(string sql)
         {
             await using var cmd = new NpgsqlCommand(sql, connection, tx);
-            cmd.Parameters.AddWithValue(campaignId);
-            cmd.Parameters.AddWithValue(locationId);
+            if (sql.Contains("$1", StringComparison.Ordinal))
+            {
+                cmd.Parameters.AddWithValue(campaignId);
+                cmd.Parameters.AddWithValue(locationId);
+            }
             return await cmd.ExecuteNonQueryAsync(cancellationToken);
         }
 
