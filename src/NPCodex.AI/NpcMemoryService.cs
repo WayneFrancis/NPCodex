@@ -64,7 +64,8 @@ public sealed class NpcMemoryService
         long campaignId, long npcId, string query,
         int maxResults = 5, CancellationToken cancellationToken = default,
         bool includeSecretMemories = true, int? currentWorldDay = null,
-        TimeOnly? currentWorldTime = null)
+        TimeOnly? currentWorldTime = null,
+        bool includeCoverStories = false)
     {
         if (string.IsNullOrWhiteSpace(query))
             throw new ArgumentException("Search question cannot be empty.", nameof(query));
@@ -75,6 +76,7 @@ public sealed class NpcMemoryService
             vector, maxResults, cancellationToken,
             includeSecretMemories: includeSecretMemories,
             currentWorldDay: currentWorldDay,
-            currentWorldTime: currentWorldTime);
+            currentWorldTime: currentWorldTime,
+            includeCoverStories: includeCoverStories);
     }
 }
