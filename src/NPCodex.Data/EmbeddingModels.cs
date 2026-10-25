@@ -16,4 +16,6 @@ public sealed record MemoryMatch(
 {
     public int? WorldDay { get; init; }
     public TimeOnly? WorldTime { get; init; }
+    public string KnowledgeStatus { get; init; } = MemoryKnowledgeStatus.Recollection;
+    public string? KnowledgeSource { get; init; }
 }
