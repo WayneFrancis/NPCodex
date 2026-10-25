@@ -9,6 +9,9 @@
     <AssemblyName>NPCodex.Desktop</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="System.Speech" Version="10.0.0" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="../NPCodex.Data/NPCodex.Data.csproj" />
     <ProjectReference Include="../NPCodex.AI/NPCodex.AI.csproj" />
   </ItemGroup>
