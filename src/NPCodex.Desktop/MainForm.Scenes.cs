@@ -6,6 +6,13 @@ namespace NPCodex.Desktop;
 
 public sealed partial class MainForm
 {
+    private readonly CheckBox _memoryUseWorldDate = new()
+    {
+        Text = "Memory has a known in-world date/time",
+        AutoSize = true,
+        Checked = true
+    };
+
     private readonly NumericUpDown _worldDay = new()
     {
         Minimum = 1, Maximum = 1_000_000, Value = 1, Width = 88
