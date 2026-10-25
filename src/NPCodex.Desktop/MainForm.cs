@@ -395,11 +395,9 @@ public sealed partial class MainForm : Form
             _locationParent.Items.Clear();
             _saveLocation.Enabled = _deleteLocation.Enabled = false;
             _rosterCampaignId = campaignId;
+            // A new campaign starts with an empty conversation. The DM chooses
+            // who is present by double-clicking them in the location tree.
             _rosterIds.Clear();
-            var initialNpc = world.Characters.FirstOrDefault(c => c.Type == "npc");
-            var initialPc = world.Characters.FirstOrDefault(c => c.Type == "pc");
-            if (initialPc is not null) _rosterIds.Add(initialPc.Id);
-            if (initialNpc is not null) _rosterIds.Add(initialNpc.Id);
         }
         RebuildConversationRoster();
         PopulateLocationTree();
