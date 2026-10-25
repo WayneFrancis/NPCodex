@@ -125,7 +125,7 @@ public sealed partial class MainForm : Form
         sidebar.Controls.Add(new Label { Text = "NPCs", Dock = DockStyle.Fill,
             TextAlign = ContentAlignment.BottomLeft }, 0, 2);
         sidebar.Controls.Add(_npcs, 0, 3);
-        sidebar.Controls.Add(new Label { Text = "Player character (optional)", Dock = DockStyle.Fill,
+        sidebar.Controls.Add(new Label { Text = "Initiating speaker (PC or NPC)", Dock = DockStyle.Fill,
             TextAlign = ContentAlignment.BottomLeft }, 0, 4);
         sidebar.Controls.Add(_playerCharacters, 0, 5);
         var reload = new Button { Text = "Refresh campaign", Dock = DockStyle.Fill };
@@ -145,7 +145,7 @@ public sealed partial class MainForm : Form
 
         var conversation = new TableLayoutPanel
         {
-            Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 8,
+            Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 9,
             Padding = new Padding(9), AutoScroll = true
         };
         conversation.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
@@ -154,6 +154,7 @@ public sealed partial class MainForm : Form
         conversation.RowStyles.Add(new RowStyle(SizeType.Absolute, 244));
         conversation.RowStyles.Add(new RowStyle(SizeType.Absolute, 105));
         conversation.RowStyles.Add(new RowStyle(SizeType.Absolute, 142));
+        conversation.RowStyles.Add(new RowStyle(SizeType.Absolute, 165));
         conversation.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
         conversation.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         dialogueTab.Controls.Add(conversation);
@@ -231,12 +232,13 @@ public sealed partial class MainForm : Form
         memoryLayout.Controls.Add(_newMemory, 0, 1);
         memoryGroup.Controls.Add(memoryLayout);
         conversation.Controls.Add(memoryGroup, 0, 5);
+        conversation.Controls.Add(CreateSceneControls(), 0, 6);
 
         var saveRow = new FlowLayoutPanel { Dock = DockStyle.Fill };
         saveRow.Controls.Add(_approve);
         saveRow.Controls.Add(new Label { Text = "Saves the chosen dialogue; memory is optional.",
             AutoSize = true, Padding = new Padding(8, 9, 0, 0) });
-        conversation.Controls.Add(saveRow, 0, 6);
+        conversation.Controls.Add(saveRow, 0, 7);
 
         var contextTabs = new TabControl { Dock = DockStyle.Fill };
         var historyTab = new TabPage("Approved conversation history");
@@ -245,7 +247,7 @@ public sealed partial class MainForm : Form
         sourcesTab.Controls.Add(_sources);
         contextTabs.TabPages.Add(historyTab);
         contextTabs.TabPages.Add(sourcesTab);
-        conversation.Controls.Add(contextTabs, 0, 7);
+        conversation.Controls.Add(contextTabs, 0, 8);
 
         BuildMemoryTab();
         BuildPersonalityTab();
@@ -295,6 +297,7 @@ public sealed partial class MainForm : Form
             if (!_ignoreSelectionEvents && !_busy)
             {
                 ResetDialogue();
+                RefreshInitiators();
                 await RunBusyAsync(async () =>
                 {
                     await LoadMemoriesAsync();
@@ -341,6 +344,7 @@ public sealed partial class MainForm : Form
         _deleteMemory.Click += async (_, _) => await RunBusyAsync(DeleteMemoryAsync);
         WirePersonalityEvents();
         WireAliasEvents();
+        WireSceneEvents();
         _addNpcButton.Click += async (_, _) => await RunBusyAsync(AddNpcAsync);
     }
 
@@ -354,7 +358,10 @@ public sealed partial class MainForm : Form
                 "Apply database migration 0003_npc_profiles.sql in DBeaver.");
         if (!await _database.HasCharacterAliasSchemaAsync())
             throw new InvalidOperationException(
-                "Apply database migration 0004_character_aliases.sql in DBeaver before starting this update.");
+                "Apply database migration 0004_character_aliases.sql in DBeaver.");
+        if (!await _database.HasWorldEventsSchemaAsync())
+            throw new InvalidOperationException(
+                "Apply database migration 0005_world_events.sql in DBeaver before launching NPCodex.");
         var previousId = CampaignId;
         var campaigns = await _database.GetCampaignsAsync();
         _ignoreSelectionEvents = true;
@@ -375,6 +382,7 @@ public sealed partial class MainForm : Form
     {
         ResetDialogue();
         var previousId = NpcId;
+        var previousSpeaker = PlayerId;
         _ignoreSelectionEvents = true;
         try
         {
@@ -399,14 +407,14 @@ public sealed partial class MainForm : Form
         {
             foreach (var person in world.Characters.Where(c => c.Type == "npc"))
                 _npcs.Items.Add(new CharacterChoice(person.Id, person.Name));
-            foreach (var person in world.Characters.Where(c => c.Type == "pc"))
-                _playerCharacters.Items.Add(new CharacterChoice(person.Id, person.Name));
+            // Initiators may now be PCs or other NPCs; populated below.
             _npcs.SelectedItem = _npcs.Items.Cast<CharacterChoice>()
                 .FirstOrDefault(p => p.Id == previousId)
                 ?? _npcs.Items.Cast<CharacterChoice>().FirstOrDefault();
         }
         finally { _ignoreSelectionEvents = false; }
 
+        RefreshInitiators(previousSpeaker);
         await LoadMemoriesAsync();
         await LoadConversationAsync();
         await LoadPersonalityAsync();
@@ -498,6 +506,10 @@ public sealed partial class MainForm : Form
         _memoryEditor.Text = item.Memory.Content;
         _importance.Value = item.Memory.Importance;
         _isSecret.Checked = item.Memory.IsSecret;
+        if (item.Memory.WorldDay is int day)
+            _worldDay.Value = Math.Clamp(day, (int)_worldDay.Minimum, (int)_worldDay.Maximum);
+        if (item.Memory.WorldTime is TimeOnly worldTime)
+            _worldTime.Value = DateTime.Today.Add(worldTime.ToTimeSpan());
     }
 
     private void ClearMemoryEditor()
@@ -520,7 +532,8 @@ public sealed partial class MainForm : Form
         var memoryId = await _database.SaveNpcMemoryAsync(
             campaignId, npcId, _editingMemory?.Id,
             _memoryEditor.Text, (short)_importance.Value,
-            _isSecret.Checked, _editingMemory?.Content);
+            _isSecret.Checked, _editingMemory?.Content,
+            when: CurrentWorldMoment);
 
         var embedded = await EmbedSavedMemoryAsync(campaignId, memoryId);
         await LoadMemoriesAsync(memoryId);
@@ -560,7 +573,8 @@ public sealed partial class MainForm : Form
         var choices = await _dialogueService.GenerateOptionsAsync(
             campaignId, npcId, _playerLine.Text,
             approvedHistory: _approvedTurns,
-            playerCharacterId: PlayerId);
+            playerCharacterId: PlayerId,
+            currentMoment: CurrentWorldMoment);
         _latestOptions = choices;
         var fixedCount = choices.Options.Count(o => o.SpeakerWordingAdjusted);
         var speakerWarnings = choices.Options.Count(o => o.NeedsSpeakerReview);
@@ -576,7 +590,13 @@ public sealed partial class MainForm : Form
         }
         _choiceChecks[0].Checked = true;
         foreach (var source in choices.RetrievedMemories)
-            _sources.Items.Add($"Memory #{source.Id}  distance {source.CosineDistance:F3}: {source.Content}");
+            _sources.Items.Add(
+                $"Memory #{source.Id} " +
+                (source.WorldDay is int day
+                    ? $"(Day {day}" +
+                      (source.WorldTime is TimeOnly time ? $" {time:HH:mm}" : "") +
+                      ") " : "(undated) ") +
+                $"distance {source.CosineDistance:F3}: {source.Content}");
 
         _status.Text =
             $"Generated {choices.Options.Count} suggestions with {choices.ModelName}. " +
@@ -627,7 +647,10 @@ public sealed partial class MainForm : Form
 
         // This describes speech only. It NEVER assumes an action (payment,
         // promises kept, gifts transferred, etc.) that the DM didn't confirm.
-        _newMemory.Text = $"Someone said to me: \"{player}\". I answered: \"{reply}\".";
+        _newMemory.Text =
+            $"On {CurrentWorldMoment}, " +
+            $"{_playerCharacters.SelectedItem ?? "someone"} said to me: \"{player}\". " +
+            $"I answered: \"{reply}\".";
         _createMemoryOnApproval.Checked = true;
         _status.Text = "Memory drafted from dialogue. Edit it before approving; no data saved.";
     }
@@ -644,34 +667,41 @@ public sealed partial class MainForm : Form
         if (withMemory && string.IsNullOrWhiteSpace(_newMemory.Text))
             throw new InvalidOperationException("Write the memory or uncheck the memory option.");
 
-        var notice = withMemory
-            ? "Save the selected NPC reply as an interaction AND the separate memory you wrote?"
-            : "Save the selected NPC reply as an interaction WITHOUT creating a memory?";
+        var recipients = _giveListenerMemories.Checked
+            ? MemoryRecipientIds() : Array.Empty<long>();
+        var notice =
+            $"Approve dialogue on {CurrentWorldMoment}? " +
+            (withMemory ? "Create the responding NPC's written memory. " :
+                "No responding-NPC memory selected. ") +
+            (recipients.Count > 0
+                ? $"Also create {recipients.Count} attributed hearing memory/memories."
+                : "No other character memories will be created.");
         if (MessageBox.Show(notice, "Approve NPC dialogue",
                 MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
             return;
 
-        var result = await _database.RecordApprovedDialogueAsync(
+        var result = await _database.RecordApprovedSceneAsync(
             campaignId, npcId, PlayerId, _playerLine.Text, reply,
-            withMemory ? _newMemory.Text : null,
+            CurrentWorldMoment, withMemory ? _newMemory.Text : null,
             (short)_newMemoryImportance.Value, _newMemorySecret.Checked,
-            conversationId: _activeConversationId);
+            _activeConversationId, recipients);
 
-        var embedded = result.MemoryId is long memoryId
-            ? await EmbedSavedMemoryAsync(campaignId, memoryId)
-            : false;
+        var embeddedCount = 0;
+        foreach (var memoryId in result.AllMemoryIds)
+            if (await EmbedSavedMemoryAsync(campaignId, memoryId))
+                embeddedCount++;
 
-        await LoadMemoriesAsync(result.MemoryId);
+        await LoadMemoriesAsync(result.ReplyNpcMemoryId);
         await LoadConversationAsync();
         _playerLine.Clear();
         _manualReply.Clear();
         _newMemory.Clear();
         _createMemoryOnApproval.Checked = false;
         ResetSuggestions();
-        _status.Text = result.MemoryId is long id
-            ? $"Interaction #{result.InteractionId} approved, memory #{id} saved" +
-              (embedded ? " and embedded." : " (embedding pending).")
-            : $"Interaction #{result.InteractionId} approved and saved. No memory created.";
+        _status.Text =
+            $"Interaction #{result.InteractionId} approved on {CurrentWorldMoment}; " +
+            $"{result.AllMemoryIds.Count} memories saved, {embeddedCount} embedded. " +
+            "Historical words are recorded, not asserted true.";
     }
 
     private async Task<bool> EmbedSavedMemoryAsync(long campaignId, long memoryId)
@@ -724,7 +754,7 @@ public sealed partial class MainForm : Form
         _generate.Enabled = _approve.Enabled = _saveMemory.Enabled =
             _deleteMemory.Enabled = _campaigns.Enabled = _npcs.Enabled =
             _saveProfile.Enabled = _saveAttitude.Enabled =
-            _addNpcButton.Enabled = false;
+            _addNpcButton.Enabled = _suggestNpcOpening.Enabled = false;
         _playerLine.Enabled = _manualReply.Enabled = _newMemory.Enabled =
             _memoryEditor.Enabled = _memories.Enabled = _playerCharacters.Enabled =
             _newConversation.Enabled = _personalityEditor.Enabled =
@@ -732,7 +762,9 @@ public sealed partial class MainForm : Form
             _motivationsEditor.Enabled = _privateNotesEditor.Enabled =
             _attitudeEditor.Enabled = _disposition.Enabled = _attitudeTarget.Enabled =
             _aliasTarget.Enabled = _aliasInput.Enabled =
-            _aliasAdd.Enabled = _aliasDelete.Enabled = false;
+            _aliasAdd.Enabled = _aliasDelete.Enabled =
+            _worldDay.Enabled = _worldTime.Enabled = _sceneTopic.Enabled =
+            _memoryRecipients.Enabled = _giveListenerMemories.Enabled = false;
         UseWaitCursor = true;
         try { await operation(); }
         catch (Exception ex)
@@ -757,7 +789,10 @@ public sealed partial class MainForm : Form
                 _motivationsEditor.Enabled = _privateNotesEditor.Enabled =
                 _attitudeEditor.Enabled = _disposition.Enabled = _attitudeTarget.Enabled =
                 _aliasTarget.Enabled = _aliasInput.Enabled =
-                _aliasAdd.Enabled = _aliasDelete.Enabled = true;
+                _aliasAdd.Enabled = _aliasDelete.Enabled =
+            _worldDay.Enabled = _worldTime.Enabled = _sceneTopic.Enabled =
+            _memoryRecipients.Enabled = _giveListenerMemories.Enabled = true;
+            _suggestNpcOpening.Enabled = CampaignId is not null;
         }
     }
 
