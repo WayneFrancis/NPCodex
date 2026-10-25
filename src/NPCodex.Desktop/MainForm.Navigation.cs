@@ -115,13 +115,30 @@ public sealed partial class MainForm
             if (_contextLocationNode?.Tag is CharacterInfo character)
                 await MoveTreeCharacterAsync(character.Id);
         });
+        var editLocation = new ToolStripMenuItem("Edit location details...");
+        editLocation.Click += (_, _) =>
+        {
+            if (_contextLocationNode?.Tag is LocationInfo location)
+                LoadLocationDetails(location.Id, switchTab: true);
+        };
+        var deleteLocation = new ToolStripMenuItem("Delete location and children...");
+        deleteLocation.Click += async (_, _) =>
+        {
+            if (_contextLocationNode?.Tag is LocationInfo location)
+                await RunBusyAsync(() => DeleteTreeLocationAsync(location.Id));
+        };
         menu.Items.Add(addNpc);
         menu.Items.Add(addPc);
         menu.Items.Add(addLocation);
         menu.Items.Add(move);
+        menu.Items.Add(editLocation);
+        menu.Items.Add(deleteLocation);
         menu.Opening += (_, _) =>
         {
             move.Visible = _contextLocationNode?.Tag is CharacterInfo;
+            addLocation.Visible = _contextLocationNode?.Tag is LocationInfo;
+            editLocation.Visible = deleteLocation.Visible =
+                _contextLocationNode?.Tag is LocationInfo;
         };
         _campaignTree.ContextMenuStrip = menu;
         _campaignTree.MouseDown += (_, e) =>
@@ -144,9 +161,16 @@ public sealed partial class MainForm
     private void WireNavigationEvents()
     {
         _treeFilter.TextChanged += (_, _) => PopulateLocationTree();
+        WireLocationDragAndDrop();
         _campaignTree.AfterSelect += async (_, e) =>
         {
             if (_updatingTree || _busy) return;
+            if (e.Node?.Tag is LocationInfo selectedLocation &&
+                _tabs.SelectedTab == _locationsTab)
+            {
+                LoadLocationDetails(selectedLocation.Id);
+                return;
+            }
             if (e.Node?.Tag is CharacterInfo character &&
                 (_tabs.SelectedTab == _memoriesTab ||
                  _tabs.SelectedTab == _personalityTab ||
@@ -163,10 +187,17 @@ public sealed partial class MainForm
         };
         _tabs.SelectedIndexChanged += async (_, _) =>
         {
-            if (_busy || (_tabs.SelectedTab != _memoriesTab &&
-                          _tabs.SelectedTab != _personalityTab &&
-                          _tabs.SelectedTab != _aliasesTab &&
-                          _tabs.SelectedTab != _characterSheetTab))
+            if (_busy) return;
+            if (_tabs.SelectedTab == _locationsTab)
+            {
+                if (_campaignTree.SelectedNode?.Tag is LocationInfo location)
+                    LoadLocationDetails(location.Id);
+                return;
+            }
+            if (_tabs.SelectedTab != _memoriesTab &&
+                _tabs.SelectedTab != _personalityTab &&
+                _tabs.SelectedTab != _aliasesTab &&
+                _tabs.SelectedTab != _characterSheetTab)
                 return;
             if (_campaignTree.SelectedNode?.Tag is CharacterInfo character)
                 await RunBusyAsync(async () =>
