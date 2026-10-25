@@ -843,3 +843,148 @@ alternation is not yet implemented. The three suggestions are probabilistic;
 test their different disclosure levels with the same question before
 relying on the behavior. Migration and Windows build have not been
 verified in this environment.
+
+
+## Phase 10: Location browser, roster-based dialogue and D&D character sheets
+
+**Migration:** Pull the latest GitHub code, then run the entire
+[`database/migrations/0006_conversation_browser.sql`](database/migrations/0006_conversation_browser.sql)
+file **once** in DBeaver against the existing `npcodex` database, after
+`0005_world_events`. This adds three tables
+(`conversation_statements`, `statement_hearers`,
+`dnd_character_sheets`) and an index for full-text searches. The migration
+backfills individual statements from earlier approved turns and uses recorded
+interaction participants as historical hearers. It does not guess missing
+speakers, dates, or unrecorded witnesses. It does not alter old memory text.
+
+```powershell
+cd D:\dev\NPCodex
+git pull --ff-only
+```
+
+```sql
+SELECT version FROM schema_migrations ORDER BY version;
+SELECT COUNT(*) AS public_tables FROM information_schema.tables
+ WHERE table_schema = 'public' AND table_type = 'BASE TABLE';
+```
+
+Expected: **six** migration versions; **20** public tables.
+
+```powershell
+dotnet build NPCodex.slnx
+dotnet run --project src/NPCodex.Desktop
+```
+
+### One campaign tree, independent conversation roster
+
+- Left-hand location tree uses `locations.parent_location_id`. A character
+  is shown beneath their `current_location_id`. Unassigned characters appear
+  under an Unassigned location node.
+- Filter the tree by character, occupation or a containing location. A matching
+  character remains visible with its containing location hierarchy.
+- **Single-click** a character in the tree while on a character-editing tab
+  to load its existing editor / D&D sheet; this does not change the dialogue
+  speaker or respondent.
+- **Double-click** a tree character to add them to the Dialogue tab's
+  conversation roster. Double-clicking again does not duplicate them.
+- Right-click a location to **Add NPC here**, **Add PC here**, or
+  **Add child location**. The new character inherits the selected
+  location automatically.
+- The new NPC/PC creator takes name, occupation/role, D&D species/ancestry,
+  class and level. The **D&D Character Sheet** tab supports six ability
+  scores (and their modifiers), AC, HP, speed, background, alignment,
+  features, equipment and DM notes. It is a flexible 5e-style record
+  editor, not a full automated D&D rules engine.
+- The campaign dropdown still keeps completely separate groups of locations,
+  characters, sheets, interactions and memories. Cross-campaign character
+  copying remains a future feature.
+
+### Asking / Answering / All
+
+The Dialogue tab contains a roster of **characters present** and two
+dropdowns: **Asking** and **Answering**. The Answering list omits whichever
+character is currently asking; when only two characters are present, the
+other character is automatically selected. If there are at least three
+roster members and an NPC is eligible, **(All)** is also available.
+
+For **(All)**, the local Ollama model chooses one eligible NPC to reply
+from the roster and the Answering dropdown updates to display that NPC.
+If Ollama fails to provide a valid character ID, the code falls back to
+the first eligible NPC instead of selecting someone outside the roster.
+AI-generated replies are offered only when the selected answering
+character is an NPC. When a **PC answers**, the DM enters the reply
+manually and still approves it as recorded dialogue.
+
+The current pair's approved conversation remains available as local
+generation context, while the **Conversation members** grid below shows
+all approved statements spoken or heard by *any* of the people in the roster.
+
+### History and searching
+
+The history grid columns are:
+1. Campaign date/time.
+2. Speaking character.
+3. Characters hearing that specific statement (excluding its own speaker).
+4. What was said.
+
+Click a header to sort. Right-click a header to enter a column-text filter.
+The search box above the grid searches across **all approved statements in
+the current campaign**, not just roster members. Each query creates a new
+result tab with the same columns plus a **Relevance** score derived from
+PostgreSQL full-text matching. Double-click a search tab to close it. The
+Refresh button reloads the roster history and existing query tabs.
+
+The search uses `websearch_to_tsquery('simple', ...)` with a substring
+fallback and is case-insensitive. It searches **literal approved speech**,
+not paraphrased embeddings. It may miss conceptual matches without shared
+words (for example, `having a sword made` versus `commissioning a blade`);
+semantic search over statements could be added later.
+
+### Who actually heard a statement?
+
+On approving a dialogue exchange, both speakers are recorded as participants.
+Normally all roster members can hear both spoken lines. The new
+`conversation_statements` and `statement_hearers` rows capture who spoke
+and exactly who heard **each utterance**, including the in-game clock.
+
+Select **Private / whispered** before approving to make only the two
+speakers hear those statements; other roster members cannot receive
+witness memories for that exchange. After a normal exchange, witnesses are
+listed as hearers even if the DM disables automatic memory creation. With
+**Give checked characters their own memory** enabled, the selected
+characters also get dated first-person memories of what they heard.
+
+The optional responding NPC memory is separate and remains DM-edited.
+NPC and PC responders can both be recorded as the answerer, but automated
+suggestions and optional reply-NPC memories only apply to NPC responders.
+Saved dialogue is canonical *speech*, not automatically canonical truth.
+
+Existing records are backfilled as fairly as the original participant data
+allows; older exchanges did not have per-statement private-audience flags.
+This edition does not yet model characters walking in/out mid-exchange,
+eavesdropping checks, or selective hiding of a single line within one
+approved two-line exchange. The private toggle applies to the current
+exchange only.
+
+### A suggested UI smoke test
+
+1. Load the existing Test Campaign and confirm Mira appears in the tree even
+   when she is currently Answering in the dialogue.
+2. Double-click Mira, Rowan and Darrin Reed to put all three in the roster.
+3. Select **Rowan → Mira**, ask a question about maps, generate/approve a
+   reply at Day 12, 14:30. All three should hear it by default.
+4. Ask a second question with **Private / whispered** checked. Only Rowan
+   and Mira should be shown as hearers in the history grid.
+5. Choose a PC as Answering, manually write/approve a reply and verify it
+   is visible in the history grid even though Generate is unavailable.
+6. Select **(All)**; generate a reply and check that an eligible NPC becomes
+   selected as Answering.
+7. Search for `maps`. A new result tab should show matching statements and
+   relevance. Change the query to `sword` to create another tab.
+8. Right-click a location and create a new NPC there, including a class
+   and level. Verify it appears beneath that location and has an editable
+   D&D sheet.
+
+These commits were written to the repository and reviewed statically.
+They still need `dotnet build` and runtime/database verification on
+Windows. Please report the first build error verbatim if one appears.
