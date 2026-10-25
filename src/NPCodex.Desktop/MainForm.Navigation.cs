@@ -339,6 +339,14 @@ public sealed partial class MainForm
         {
             _campaignTree.BeginUpdate();
             _campaignTree.Nodes.Clear();
+            // Keep Unassigned first and permanent, regardless of filter or
+            // whether the campaign currently has unplaced characters.
+            var unassigned = new TreeNode("Unassigned")
+            {
+                Tag = _unassignedNodeTag,
+                ToolTipText = "Drop characters here to clear their current location."
+            };
+            _campaignTree.Nodes.Add(unassigned);
             var nodes = new Dictionary<long, TreeNode>();
             foreach (var loc in _campaignLocations.Where(l => included.Contains(l.Id)))
                 nodes[loc.Id] = new TreeNode(loc.Name)
@@ -371,14 +379,6 @@ public sealed partial class MainForm
                 }
                 return true;
             }
-
-            // This node always exists, even when no characters are unassigned.
-            var unassigned = new TreeNode("Unassigned")
-            {
-                Tag = _unassignedNodeTag,
-                ToolTipText = "Drop characters here to clear their current location."
-            };
-            _campaignTree.Nodes.Add(unassigned);
 
             foreach (var character in matchedCharacters
                          .OrderBy(c => c.Name, StringComparer.CurrentCultureIgnoreCase))
