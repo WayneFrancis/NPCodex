@@ -95,7 +95,8 @@ internal sealed class StatementHistoryGrid : UserControl
                 SortMode = DataGridViewColumnSortMode.NotSortable,
                 MinimumWidth = 65
             });
-            _filter.Columns[i].DefaultCellStyle.NullValue = "Filter...";
+            _filter.Columns[i].ToolTipText =
+                "Enter text in the row below this header to filter statements.";
         }
         if (showRelevance)
             _results.Columns[_results.Columns.Count - 1]
