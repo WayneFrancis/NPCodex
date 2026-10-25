@@ -492,6 +492,7 @@ public sealed partial class MainForm : Form
                     "Could not end the conversation. Refresh to check its state.");
 
         ResetDialogue();
+        _allowPreparedLies.Checked = false;
         await LoadConversationAsync();
         _status.Text = "Ready for a fresh conversation. Previous approved records remain saved.";
     }
