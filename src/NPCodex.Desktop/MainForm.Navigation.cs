@@ -145,12 +145,13 @@ public sealed partial class MainForm
         _campaignTree.AfterSelect += async (_, e) =>
         {
             if (_updatingTree || _busy) return;
-            if (e.Node.Tag is CharacterInfo character)
-            {
-                if (_tabs.SelectedTab != null &&
-                    _tabs.SelectedTab.Text != "Dialogue")
-                    await RunBusyAsync(async () => await SelectEditableCharacterAsync(character.Id));
-            }
+            if (e.Node.Tag is CharacterInfo character &&
+                (_tabs.SelectedTab == _memoriesTab ||
+                 _tabs.SelectedTab == _personalityTab ||
+                 _tabs.SelectedTab == _aliasesTab ||
+                 _tabs.SelectedTab == _characterSheetTab))
+                await RunBusyAsync(async () =>
+                    await SelectEditableCharacterAsync(character.Id));
         };
         _campaignTree.NodeMouseDoubleClick += async (_, e) =>
         {
