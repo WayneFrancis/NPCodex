@@ -34,6 +34,9 @@ internal sealed class StatementHistoryGrid : UserControl
 
         foreach (var name in captions)
             _table.Columns.Add(name, name == "Relevance" ? typeof(double) : typeof(string));
+        // Hidden numeric sort key keeps "Day 2" before "Day 10" while showing
+        // natural, human-readable campaign dates in the visible grid.
+        _table.Columns.Add("Chronology sort", typeof(long));
 
         var group = new TableLayoutPanel
         {
@@ -95,7 +98,8 @@ internal sealed class StatementHistoryGrid : UserControl
             _filter.Columns[i].DefaultCellStyle.NullValue = "Filter...";
         }
         if (showRelevance)
-            _results.Columns[^1].DefaultCellStyle.Format = "0.000";
+            _results.Columns[_results.Columns.Count - 1]
+                .DefaultCellStyle.Format = "0.000";
 
         _filter.Rows.Add();
         _filter.Rows[0].Height = 30;
@@ -119,7 +123,9 @@ internal sealed class StatementHistoryGrid : UserControl
             if (e.ColumnIndex < 0) return;
             _sortDescending = _sortColumn == e.ColumnIndex && !_sortDescending;
             _sortColumn = e.ColumnIndex;
-            _table.DefaultView.Sort = "[" + captions[_sortColumn].Replace("]", "]]") +
+            var sortName = _sortColumn == 0
+                ? "Chronology sort" : captions[_sortColumn];
+            _table.DefaultView.Sort = "[" + sortName.Replace("]", "]]") +
                 "] " + (_sortDescending ? "DESC" : "ASC");
             _results.ClearSelection();
         };
@@ -145,14 +151,19 @@ internal sealed class StatementHistoryGrid : UserControl
             foreach (var line in statements)
             {
                 var date = line.WorldDay is int day
-                    ? $"Day {day:000000}" +
+                    ? $"Day {day}" +
                       (line.WorldTime is TimeOnly time ? $" {time:HH:mm}" : "")
                     : "Undated";
+                var chronological = line.WorldDay is int d
+                    ? (long)d * 1440 +
+                      (line.WorldTime is TimeOnly t ? t.Hour * 60 + t.Minute : 0)
+                    : -1L;
                 if (_showRelevance)
                     _table.Rows.Add(date, line.Speaker, line.Hearers,
-                        line.Content, Math.Round(line.Relevance, 3));
+                        line.Content, Math.Round(line.Relevance, 3), chronological);
                 else
-                    _table.Rows.Add(date, line.Speaker, line.Hearers, line.Content);
+                    _table.Rows.Add(date, line.Speaker, line.Hearers,
+                        line.Content, chronological);
             }
         }
         finally { _table.EndLoadData(); }
