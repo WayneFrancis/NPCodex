@@ -88,12 +88,12 @@ internal static class NpcEvidenceScope
     internal static IReadOnlyList<ConversationTurn>? ExcludeFutureTurns(
         IReadOnlyList<ConversationTurn>? history, WorldMoment? now)
     {
-        if (history is null || now is null) return history;
+        if (history is null || now is not { } current) return history;
         return history.Where(turn =>
             turn.WorldDay is not int day ||
-            day < now.Day ||
-            (day == now.Day &&
-                (turn.WorldTime is not TimeOnly time || time <= now.Time)))
+            day < current.Day ||
+            (day == current.Day &&
+                (turn.WorldTime is not TimeOnly time || time <= current.Time)))
             .ToArray();
     }
 
