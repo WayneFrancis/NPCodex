@@ -51,8 +51,11 @@ public sealed partial class NPCodexDatabase
 
         const string sql = """
             SELECT t.turn_id, t.interaction_id, t.player_line,
-                   t.npc_reply, t.approved_at
+                   t.npc_reply, t.approved_at,
+                   t.speaker_character_id, i.world_day, i.world_time
             FROM conversation_turns t
+            JOIN interactions i ON i.campaign_id = t.campaign_id
+                               AND i.interaction_id = t.interaction_id
             INNER JOIN conversation_sessions s
                 ON s.campaign_id = t.campaign_id AND s.session_id = t.session_id
             WHERE t.campaign_id = $1 AND t.session_id = $2 AND s.npc_id = $3
@@ -67,7 +70,12 @@ public sealed partial class NPCodexDatabase
         while (await reader.ReadAsync(cancellationToken))
             result.Add(new ConversationTurn(
                 reader.GetInt64(0), reader.GetInt64(1),
-                reader.GetString(2), reader.GetString(3), reader.GetDateTime(4)));
+                reader.GetString(2), reader.GetString(3), reader.GetDateTime(4))
+            {
+                SpeakerCharacterId = reader.IsDBNull(5) ? null : reader.GetInt64(5),
+                WorldDay = reader.IsDBNull(6) ? null : reader.GetInt32(6),
+                WorldTime = reader.IsDBNull(7) ? null : reader.GetFieldValue<TimeOnly>(7)
+            });
         return result;
     }
 
