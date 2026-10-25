@@ -69,7 +69,7 @@ public sealed partial class MainForm : Form
 
     private long? CampaignId => (_campaigns.SelectedItem as CampaignChoice)?.Id;
     private long? NpcId => (_npcs.SelectedItem as CharacterChoice)?.Id;
-    private long? PlayerId => (_playerCharacters.SelectedItem as CharacterChoice)?.Id;
+    private long? PlayerId => (_asking.SelectedItem as CharacterChoice)?.Id;
 
     public MainForm(string connectionString)
     {
@@ -108,39 +108,14 @@ public sealed partial class MainForm : Form
         split.Panel1MinSize = 230;
         split.Panel2MinSize = 740;
 
-        var sidebar = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill, Padding = new Padding(10),
-            ColumnCount = 1, RowCount = 7
-        };
-        foreach (var height in new[] { 30f, 38f, 32f })
-            sidebar.RowStyles.Add(new RowStyle(SizeType.Absolute, height));
-        sidebar.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        sidebar.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
-        sidebar.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
-        sidebar.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
-        sidebar.Controls.Add(new Label { Text = "Campaign", Dock = DockStyle.Fill,
-            TextAlign = ContentAlignment.BottomLeft }, 0, 0);
-        sidebar.Controls.Add(_campaigns, 0, 1);
-        sidebar.Controls.Add(new Label { Text = "NPCs", Dock = DockStyle.Fill,
-            TextAlign = ContentAlignment.BottomLeft }, 0, 2);
-        sidebar.Controls.Add(_npcs, 0, 3);
-        sidebar.Controls.Add(new Label { Text = "Initiating speaker (PC or NPC)", Dock = DockStyle.Fill,
-            TextAlign = ContentAlignment.BottomLeft }, 0, 4);
-        sidebar.Controls.Add(_playerCharacters, 0, 5);
-        var reload = new Button { Text = "Refresh campaign", Dock = DockStyle.Fill };
-        reload.Click += async (_, _) => await RunBusyAsync(LoadCampaignsAsync);
-        var sidebarActions = new FlowLayoutPanel { Dock = DockStyle.Fill };
-        sidebarActions.Controls.Add(reload);
-        sidebarActions.Controls.Add(_addNpcButton);
-        sidebar.Controls.Add(sidebarActions, 0, 6);
-        split.Panel1.Controls.Add(sidebar);
+        split.Panel1.Controls.Add(BuildCampaignNavigation());
 
         var dialogueTab = new TabPage("Dialogue");
         _tabs.TabPages.Add(dialogueTab);
         _tabs.TabPages.Add(_memoriesTab);
         _tabs.TabPages.Add(_personalityTab);
         _tabs.TabPages.Add(_aliasesTab);
+        _tabs.TabPages.Add(_characterSheetTab);
         split.Panel2.Controls.Add(_tabs);
 
         var conversation = new TableLayoutPanel
@@ -148,7 +123,7 @@ public sealed partial class MainForm : Form
             Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 9,
             Padding = new Padding(9), AutoScroll = true
         };
-        conversation.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
+        conversation.RowStyles.Add(new RowStyle(SizeType.Absolute, 155));
         conversation.RowStyles.Add(new RowStyle(SizeType.Absolute, 102));
         conversation.RowStyles.Add(new RowStyle(SizeType.Absolute, 72));
         conversation.RowStyles.Add(new RowStyle(SizeType.Absolute, 244));
@@ -159,13 +134,9 @@ public sealed partial class MainForm : Form
         conversation.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         dialogueTab.Controls.Add(conversation);
 
-        var conversationBar = new FlowLayoutPanel { Dock = DockStyle.Fill };
-        conversationBar.Controls.Add(_newConversation);
-        _conversationLabel.Padding = new Padding(12, 9, 0, 0);
-        conversationBar.Controls.Add(_conversationLabel);
-        conversation.Controls.Add(conversationBar, 0, 0);
+        conversation.Controls.Add(BuildConversationHeader(), 0, 0);
 
-        var playerGroup = new GroupBox { Text = "What the player says", Dock = DockStyle.Fill };
+        var playerGroup = new GroupBox { Text = "What the initiating character says", Dock = DockStyle.Fill };
         playerGroup.Controls.Add(_playerLine);
         conversation.Controls.Add(playerGroup, 0, 1);
 
@@ -240,18 +211,12 @@ public sealed partial class MainForm : Form
             AutoSize = true, Padding = new Padding(8, 9, 0, 0) });
         conversation.Controls.Add(saveRow, 0, 7);
 
-        var contextTabs = new TabControl { Dock = DockStyle.Fill };
-        var historyTab = new TabPage("Approved conversation history");
-        historyTab.Controls.Add(_history);
-        var sourcesTab = new TabPage("Retrieved long-term memories (DM only)");
-        sourcesTab.Controls.Add(_sources);
-        contextTabs.TabPages.Add(historyTab);
-        contextTabs.TabPages.Add(sourcesTab);
-        conversation.Controls.Add(contextTabs, 0, 8);
+        conversation.Controls.Add(BuildConversationHistoryArea(), 0, 8);
 
         BuildMemoryTab();
         BuildPersonalityTab();
         BuildAliasesTab();
+        BuildDndSheetTab();
     }
 
     private void BuildMemoryTab()
@@ -296,18 +261,13 @@ public sealed partial class MainForm : Form
         _npcs.SelectedIndexChanged += async (_, _) =>
         {
             if (!_ignoreSelectionEvents && !_busy)
-            {
-                ResetDialogue();
-                RefreshInitiators();
                 await RunBusyAsync(async () =>
                 {
                     await LoadMemoriesAsync();
-                    await LoadConversationAsync();
                     await LoadPersonalityAsync();
                     PopulateAliasTargets();
                     await LoadAliasesAsync();
                 });
-            }
         };
         _playerLine.TextChanged += (_, _) => { if (!_busy) ResetSuggestions(); };
         for (var i = 0; i < _choiceChecks.Length; i++)
@@ -323,19 +283,6 @@ public sealed partial class MainForm : Form
             if (_manualChoice.Checked) SelectChoice(-1);
         };
         _draftMemoryButton.Click += (_, _) => DraftMemoryFromDialogue();
-        _playerCharacters.SelectedIndexChanged += async (_, _) =>
-        {
-            if (!_ignoreSelectionEvents && !_busy)
-            {
-                ResetDialogue();
-                await RunBusyAsync(async () =>
-                {
-                    await LoadConversationAsync();
-                    PopulateRelationshipTargets(PlayerId);
-                    await LoadAttitudeAsync();
-                });
-            }
-        };
         _newConversation.Click += async (_, _) => await RunBusyAsync(EndConversationAsync);
         _generate.Click += async (_, _) => await RunBusyAsync(GenerateAsync);
         _approve.Click += async (_, _) => await RunBusyAsync(ApproveAsync);
@@ -346,7 +293,10 @@ public sealed partial class MainForm : Form
         WirePersonalityEvents();
         WireAliasEvents();
         WireSceneEvents();
-        _addNpcButton.Click += async (_, _) => await RunBusyAsync(AddNpcAsync);
+        WireNavigationEvents();
+        WireHistoryEvents();
+        WireDndSheetEvents();
+        _addNpcButton.Click += async (_, _) => await RunBusyAsync(() => AddNpcAsync());
     }
 
     private async Task LoadCampaignsAsync()
@@ -362,7 +312,10 @@ public sealed partial class MainForm : Form
                 "Apply database migration 0004_character_aliases.sql in DBeaver.");
         if (!await _database.HasWorldEventsSchemaAsync())
             throw new InvalidOperationException(
-                "Apply database migration 0005_world_events.sql in DBeaver before launching NPCodex.");
+                "Apply database migration 0005_world_events.sql in DBeaver.");
+        if (!await _database.HasConversationBrowserSchemaAsync())
+            throw new InvalidOperationException(
+                "Apply database migration 0006_conversation_browser.sql in DBeaver.");
         var previousId = CampaignId;
         var campaigns = await _database.GetCampaignsAsync();
         _ignoreSelectionEvents = true;
@@ -383,15 +336,8 @@ public sealed partial class MainForm : Form
     {
         ResetDialogue();
         var previousId = NpcId;
-        var previousSpeaker = PlayerId;
         _ignoreSelectionEvents = true;
-        try
-        {
-            _npcs.Items.Clear();
-            _playerCharacters.Items.Clear();
-            _playerCharacters.Items.Add(new CharacterChoice(null, "(No specific player character)"));
-            _playerCharacters.SelectedIndex = 0;
-        }
+        try { _npcs.Items.Clear(); }
         finally { _ignoreSelectionEvents = false; }
 
         if (CampaignId is not long campaignId)
@@ -403,6 +349,7 @@ public sealed partial class MainForm : Form
 
         var world = await _database.GetCampaignWorldAsync(campaignId);
         _campaignCharacters = world.Characters;
+        _campaignLocations = world.Locations;
         _ignoreSelectionEvents = true;
         try
         {
@@ -415,7 +362,18 @@ public sealed partial class MainForm : Form
         }
         finally { _ignoreSelectionEvents = false; }
 
-        RefreshInitiators(previousSpeaker);
+        if (_rosterCampaignId != campaignId)
+        {
+            _rosterCampaignId = campaignId;
+            _rosterIds.Clear();
+            var initialNpc = world.Characters.FirstOrDefault(c => c.Type == "npc");
+            var initialPc = world.Characters.FirstOrDefault(c => c.Type == "pc");
+            if (initialPc is not null) _rosterIds.Add(initialPc.Id);
+            if (initialNpc is not null) _rosterIds.Add(initialNpc.Id);
+        }
+        RebuildConversationRoster();
+        PopulateLocationTree();
+        await LoadRosterHistoryAsync();
         await LoadMemoriesAsync();
         await LoadConversationAsync();
         await LoadPersonalityAsync();
@@ -430,7 +388,8 @@ public sealed partial class MainForm : Form
         _approvedTurns = Array.Empty<ConversationTurn>();
         _history.Clear();
         _conversationLabel.Text = "No active conversation — the first approved reply starts one.";
-        if (CampaignId is not long campaignId || NpcId is not long npcId) return;
+        if (CampaignId is not long campaignId ||
+            ReplyCharacterId is not long npcId) return;
 
         var session = await _database.FindOpenConversationAsync(
             campaignId, npcId, PlayerId);
@@ -465,8 +424,8 @@ public sealed partial class MainForm : Form
 
     private async Task EndConversationAsync()
     {
-        if (CampaignId is not long campaignId || NpcId is not long npcId)
-            throw new InvalidOperationException("Select an NPC first.");
+        if (CampaignId is not long campaignId || ReplyCharacterId is not long npcId)
+            throw new InvalidOperationException("Select a character to answer first.");
 
         var text = _activeConversationId is null
             ? "Discard any current, unapproved text and start a fresh conversation?"
