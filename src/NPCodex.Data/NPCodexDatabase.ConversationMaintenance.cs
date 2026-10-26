@@ -68,8 +68,7 @@ public sealed partial class NPCodexDatabase
         CancellationToken cancellationToken = default)
     {
         RequireCampaignId(campaignId);
-        if (moment.Day < 1)
-            throw new ArgumentOutOfRangeException(nameof(moment));
+        // Pre-campaign timestamps (negative days and day zero) are valid.
         ArgumentNullException.ThrowIfNull(expected);
         if (expected.InteractionId <= 0)
             throw new ArgumentOutOfRangeException(nameof(expected));

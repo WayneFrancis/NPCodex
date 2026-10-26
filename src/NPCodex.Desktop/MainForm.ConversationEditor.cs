@@ -59,8 +59,8 @@ public sealed partial class MainForm
             });
             var day = new NumericUpDown
             {
-                Width = 115, Minimum = 1, Maximum = 1_000_000,
-                Value = Math.Clamp(original.WorldDay ?? 1, 1, 1_000_000)
+                Width = 125, Minimum = -1_000_000, Maximum = 1_000_000,
+                Value = Math.Clamp(original.WorldDay ?? 1, -1_000_000, 1_000_000)
             };
             timeRow.Controls.Add(day);
             timeRow.Controls.Add(new Label

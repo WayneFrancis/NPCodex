@@ -71,6 +71,27 @@ public sealed partial class MainForm
         ScrollBars = ScrollBars.Vertical
     };
     private readonly DataTable _memorySearchTable = new();
+    private readonly DataGridView _memorySearchFilter = new()
+    {
+        Dock = DockStyle.Fill,
+        ColumnHeadersVisible = true,
+        RowHeadersVisible = false,
+        ScrollBars = ScrollBars.None,
+        AutoGenerateColumns = false,
+        AllowUserToAddRows = false,
+        AllowUserToDeleteRows = false,
+        AllowUserToResizeRows = false,
+        SelectionMode = DataGridViewSelectionMode.CellSelect,
+        EditMode = DataGridViewEditMode.EditOnKeystrokeOrF2,
+        MultiSelect = false,
+        ColumnHeadersHeightSizeMode =
+            DataGridViewColumnHeadersHeightSizeMode.DisableResizing,
+        ColumnHeadersHeight = 28
+    };
+    private readonly Dictionary<int,string> _memorySearchFilters = [];
+    private bool _syncingMemoryWidths;
+    private int _memorySearchSortColumn = -1;
+    private bool _memorySearchSortDescending;
     private IReadOnlyList<CampaignMemoryHit> _memorySearchResults = [];
 
     private void BuildMemorySearchTab()
@@ -152,9 +173,75 @@ public sealed partial class MainForm
                 FillWeight = i == 8 ? 300 : i == 1 ? 125 : i == 3 ? 145 : 65,
                 MinimumWidth = i == 8 ? 160 : 54
             });
+            _memorySearchFilter.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "MemoryFilter" + i,
+                HeaderText = names[i],
+                SortMode = DataGridViewColumnSortMode.NotSortable,
+                MinimumWidth = i == 8 ? 160 : 54
+            });
         }
         _memorySearchGrid.Columns[7].DefaultCellStyle.Format = "0.000";
         _memorySearchGrid.DataSource = _memorySearchTable.DefaultView;
+        _memorySearchGrid.ColumnHeadersVisible = false;
+        _memorySearchGrid.DefaultCellStyle.WrapMode = DataGridViewTriState.True;
+        _memorySearchGrid.AutoSizeRowsMode =
+            DataGridViewAutoSizeRowsMode.DisplayedCellsExceptHeaders;
+        _memorySearchFilter.RowTemplate.Height = 30;
+        _memorySearchFilter.Rows.Add();
+        _memorySearchFilter.Rows[0].Height = 30;
+        _memorySearchFilter.DefaultCellStyle.BackColor = SystemColors.Info;
+        _memorySearchFilter.DefaultCellStyle.SelectionBackColor = SystemColors.Info;
+        _memorySearchFilter.DefaultCellStyle.SelectionForeColor = SystemColors.WindowText;
+        _memorySearchFilter.ClearSelection();
+        _memorySearchFilter.CellEndEdit += (_, _) => ApplyMemoryGridFilters();
+        _memorySearchFilter.EditingControlShowing += (_, e) =>
+        {
+            if (e.Control is TextBox editor)
+            {
+                editor.TextChanged -= MemoryFilterTextChanged;
+                editor.TextChanged += MemoryFilterTextChanged;
+            }
+        };
+        _memorySearchFilter.CellClick += (_, e) =>
+        {
+            if (e.RowIndex == 0 && e.ColumnIndex >= 0)
+                _memorySearchFilter.BeginEdit(true);
+        };
+        _memorySearchFilter.ColumnHeaderMouseClick += (_, e) =>
+        {
+            if (e.ColumnIndex < 0) return;
+            _memorySearchSortDescending =
+                _memorySearchSortColumn == e.ColumnIndex &&
+                !_memorySearchSortDescending;
+            _memorySearchSortColumn = e.ColumnIndex;
+            var key = dataNames[e.ColumnIndex];
+            _memorySearchTable.DefaultView.Sort =
+                "[" + key.Replace("]", "]]") + "] " +
+                (_memorySearchSortDescending ? "DESC" : "ASC");
+        };
+        _memorySearchFilter.ColumnWidthChanged += (_, e) =>
+        {
+            if (_syncingMemoryWidths ||
+                e.Column.Index >= _memorySearchGrid.Columns.Count) return;
+            _syncingMemoryWidths = true;
+            try
+            {
+                _memorySearchGrid.Columns[e.Column.Index].Width =
+                    e.Column.Width;
+            }
+            finally { _syncingMemoryWidths = false; }
+            SyncMemoryGridWidths();
+        };
+        _memorySearchGrid.ColumnWidthChanged += (_, _) => SyncMemoryGridWidths();
+        _memorySearchGrid.Scroll += (_, e) =>
+        {
+            if (e.ScrollOrientation == ScrollOrientation.HorizontalScroll)
+                SyncMemoryGridWidths();
+        };
+        _memorySearchGrid.DataBindingComplete += (_, _) => SyncMemoryGridWidths();
+        _memorySearchGrid.SizeChanged += (_, _) => SyncMemoryGridWidths();
+        _memorySearchFilter.HandleCreated += (_, _) => SyncMemoryGridWidths();
         var menu = new ContextMenuStrip();
         var forget = new ToolStripMenuItem("Forget/delete this character memory...");
         forget.Click += async (_, _) =>
@@ -173,7 +260,16 @@ public sealed partial class MainForm
                     _memorySearchGrid.Rows[e.RowIndex].Cells[
                         Math.Max(e.ColumnIndex, 0)];
         };
-        right.Controls.Add(_memorySearchGrid, 0, 2);
+        var filteredGrid = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2,
+            Margin = Padding.Empty
+        };
+        filteredGrid.RowStyles.Add(new RowStyle(SizeType.Absolute, 62));
+        filteredGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        filteredGrid.Controls.Add(_memorySearchFilter, 0, 0);
+        filteredGrid.Controls.Add(_memorySearchGrid, 0, 1);
+        right.Controls.Add(filteredGrid, 0, 2);
         var preview = new GroupBox { Text = "Selected memory (read-only)", Dock = DockStyle.Fill };
         preview.Controls.Add(_memorySearchPreview);
         right.Controls.Add(preview, 0, 3);
@@ -270,6 +366,13 @@ public sealed partial class MainForm
         _memorySearchOwnerFilter.Clear();
         _memorySearchPhrase.Clear();
         _memorySearchResults = [];
+        _memorySearchFilters.Clear();
+        if (_memorySearchFilter.Rows.Count > 0)
+        {
+            foreach (DataGridViewCell cell in _memorySearchFilter.Rows[0].Cells)
+                cell.Value = "";
+        }
+        _memorySearchTable.DefaultView.RowFilter = "";
         _memorySearchTable.Rows.Clear();
         _memorySearchPreview.Clear();
         _memorySearchInfo.Text =
@@ -325,6 +428,8 @@ public sealed partial class MainForm
             }
         }
         finally { _memorySearchTable.EndLoadData(); }
+        ApplyMemoryGridFilters();
+        SyncMemoryGridWidths();
         _memorySearchPreview.Clear();
         _forgetMemoryButton.Enabled = !_busy && SelectedMemorySearchHit() is not null;
         _memorySearchInfo.Text = $"{found.Count} memories shown" +
@@ -333,6 +438,50 @@ public sealed partial class MainForm
             (meaning
                 ? ". Scores are cosine similarity; unembedded memories are omitted."
                 : ". Text matches and recent memories; empty query browses memories.");
+    }
+
+    private void MemoryFilterTextChanged(object? sender, EventArgs e)
+    {
+        if (_memorySearchFilter.CurrentCell is not { } cell ||
+            sender is not TextBox editor) return;
+        _memorySearchFilters[cell.ColumnIndex] = editor.Text.Trim();
+        ApplyMemoryGridFilters();
+    }
+
+    private void ApplyMemoryGridFilters()
+    {
+        if (_memorySearchFilter.CurrentCell is { } current &&
+            _memorySearchFilter.IsCurrentCellInEditMode &&
+            _memorySearchFilter.EditingControl is TextBox editor)
+            _memorySearchFilters[current.ColumnIndex] = editor.Text.Trim();
+        else if (_memorySearchFilter.Rows.Count > 0)
+            for (int i = 0; i < _memorySearchFilter.Columns.Count; i++)
+                _memorySearchFilters[i] =
+                    _memorySearchFilter.Rows[0].Cells[i].Value?
+                        .ToString()?.Trim() ?? "";
+
+        _memorySearchTable.DefaultView.RowFilter =
+            GridTextFilter.Build(_memorySearchTable.Columns, _memorySearchFilters);
+    }
+
+    private void SyncMemoryGridWidths()
+    {
+        if (_syncingMemoryWidths || !_memorySearchFilter.IsHandleCreated ||
+            _memorySearchFilter.Columns.Count != _memorySearchGrid.Columns.Count)
+            return;
+        _syncingMemoryWidths = true;
+        try
+        {
+            for (int i=0;i<_memorySearchFilter.Columns.Count;i++)
+                if(_memorySearchFilter.Columns[i].Width !=
+                    _memorySearchGrid.Columns[i].Width)
+                    _memorySearchFilter.Columns[i].Width =
+                        _memorySearchGrid.Columns[i].Width;
+            var scroll=_memorySearchGrid.HorizontalScrollingOffset;
+            if (_memorySearchFilter.HorizontalScrollingOffset != scroll)
+                _memorySearchFilter.HorizontalScrollingOffset = scroll;
+        }
+        finally { _syncingMemoryWidths = false; }
     }
 
     private CampaignMemoryHit? SelectedMemorySearchHit()

@@ -15,7 +15,7 @@ public sealed partial class MainForm
 
     private readonly NumericUpDown _memoryWorldDay = new()
     {
-        Minimum = 1, Maximum = 1_000_000, Value = 1, Width = 75
+        Minimum = -1_000_000, Maximum = 1_000_000, Value = 1, Width = 105
     };
     private readonly DateTimePicker _memoryWorldTime = new()
     {
@@ -29,7 +29,7 @@ public sealed partial class MainForm
 
     private readonly NumericUpDown _worldDay = new()
     {
-        Minimum = 1, Maximum = 1_000_000, Value = 1, Width = 88
+        Minimum = -1_000_000, Maximum = 1_000_000, Value = 1, Width = 105
     };
 
     private readonly DateTimePicker _worldTime = new()
@@ -65,7 +65,7 @@ public sealed partial class MainForm
     private readonly Label _worldHelp = new()
     {
         AutoSize = true,
-        Text = "Campaign day/time, not real-world calendar date"
+        Text = "Campaign day/time (negative days predate the campaign; 0 is its eve)"
     };
 
     private WorldMoment CurrentWorldMoment =>

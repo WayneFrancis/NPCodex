@@ -8,7 +8,8 @@ public sealed record ApprovedScene(
 
 /// <summary>
 /// The game's clock is deliberately distinct from the computer's date/time.
-/// Day numbers start at 1; null date/time on old records means unknown, not now.
+/// Day 1 is the first campaign day; negative days and day 0 are valid
+/// pre-campaign chronology. Null old dates mean unknown, not now.
 /// </summary>
 public sealed record WorldMoment(int Day, TimeOnly Time)
 {

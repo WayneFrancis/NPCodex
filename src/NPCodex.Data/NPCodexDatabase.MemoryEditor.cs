@@ -61,8 +61,8 @@ public sealed partial class NPCodexDatabase
             throw new ArgumentException("Source description must be at most 300 characters.");
         RequireCampaignId(campaignId);
         if (npcId <= 0) throw new ArgumentOutOfRangeException(nameof(npcId));
-        if (when is not null && when.Day < 1)
-            throw new ArgumentException("Campaign day must be at least 1.");
+        // Negative days describe events before the campaign began. The
+        // database chronology columns are signed INTEGERs; day 0 is valid.
         RequireText(content, nameof(content));
         if (importance is < 1 or > 5)
             throw new ArgumentOutOfRangeException(nameof(importance));

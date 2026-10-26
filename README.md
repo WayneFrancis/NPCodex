@@ -1756,3 +1756,41 @@ Actions now builds the solution and runs the dialogue checks on each
 push. No schema migration or re-embedding is required; opinions and
 histories are read from their existing database records. The existing
 DM approval workflow is unchanged.
+
+
+### Statement History and Memory Search usability; signed campaign days
+
+- The **Conversation History** statement viewer now keeps the heading/filter
+  grid and actual statement cells aligned when a user resizes columns in
+  either direction.
+- Long **What was said** entries wrap into multiline rows. Right-click a
+  statement for **View full statement...**, **Copy selected cell**, or
+  **Copy full statement**. The full-text viewer also has **Copy all**;
+  the existing double-click to edit an exchange's date remains unchanged.
+- **Memory Search** now has a per-column filter row, just like statement
+  history, with sort-by-header, resize synchronization, and filtering of
+  existing search results without querying PostgreSQL again. The owner
+  selection and keyword/semantic search controls still set the wider scope.
+- New and edited memories, approved exchanges, and exchange date corrections
+  accept signed campaign-day numbers from -1,000,000 to +1,000,000, including
+  day zero. Negative days mean events BEFORE the campaign begins; they sort
+  and obey fictional chronology correctly. Undated memories are still
+  distinct from those on day zero.
+
+**Required one-time database migration for pre-campaign days**:
+Apply [`database/migrations/0009_signed_campaign_days.sql`](database/migrations/0009_signed_campaign_days.sql)
+to your existing `npcodex` PostgreSQL database using DBeaver, **after**
+0008 has been applied. The script removes only old nonnegative-day
+CHECK restrictions on event, memory, statement and time-edit tables; it
+doesn't delete or rewrite stored content. You may run it again safely
+after it has completed. If you skip this migration, PostgreSQL will
+reject saves using a negative day even though the UI permits them.
+
+Test without PostgreSQL or Ollama:
+
+```powershell
+dotnet build NPCodex.slnx
+dotnet run --project src/NPCodex.RegressionTests
+```
+
+The Windows GitHub Actions build runs these regressions on each change.

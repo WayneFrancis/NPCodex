@@ -76,8 +76,21 @@ internal sealed class StatementHistoryGrid : UserControl
         _results.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
         _results.AutoGenerateColumns = false;
         _results.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+        _results.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.DisplayedCellsExceptHeaders;
+        _results.DefaultCellStyle.WrapMode = DataGridViewTriState.True;
+        _results.DefaultCellStyle.Alignment = DataGridViewContentAlignment.TopLeft;
         _results.DataSource = _table.DefaultView;
         var editMenu = new ContextMenuStrip();
+        var viewStatement = new ToolStripMenuItem("View full statement...");
+        viewStatement.Click += (_, _) => ViewCurrentStatement();
+        var copyCell = new ToolStripMenuItem("Copy selected cell");
+        copyCell.Click += (_, _) => CopyCurrentCell();
+        var copyStatement = new ToolStripMenuItem("Copy full statement");
+        copyStatement.Click += (_, _) => CopyCurrentStatement();
+        editMenu.Items.Add(viewStatement);
+        editMenu.Items.Add(copyCell);
+        editMenu.Items.Add(copyStatement);
+        editMenu.Items.Add(new ToolStripSeparator());
         var editMoment = new ToolStripMenuItem("Edit exchange date/time...");
         editMoment.Click += (_, _) => RequestEditCurrentStatement();
         editMenu.Items.Add(editMoment);
@@ -100,6 +113,9 @@ internal sealed class StatementHistoryGrid : UserControl
         {
             var enabled = SelectedStatementId() is not null;
             editMoment.Enabled = enabled;
+            viewStatement.Enabled = enabled;
+            copyCell.Enabled = _results.CurrentCell is not null;
+            copyStatement.Enabled = enabled;
             deleteStatement.Enabled = enabled;
             deleteExchange.Enabled = enabled;
             if (!enabled) e.Cancel = true;
@@ -174,6 +190,20 @@ internal sealed class StatementHistoryGrid : UserControl
         };
 
         _results.ColumnWidthChanged += (_, _) => SyncWidths();
+        // User resize of the HEADER/FILTER must also resize result cells.
+        // The existing one-way result->filter handler ignored this case.
+        _filter.ColumnWidthChanged += (_, e) =>
+        {
+            if (_syncing || e.Column is null ||
+                e.Column.Index >= _results.Columns.Count) return;
+            _syncing = true;
+            try
+            {
+                _results.Columns[e.Column.Index].Width = e.Column.Width;
+            }
+            finally { _syncing = false; }
+            SyncWidths();
+        };
         _results.Scroll += (_, e) =>
         {
             if (e.ScrollOrientation == ScrollOrientation.HorizontalScroll)
@@ -200,7 +230,7 @@ internal sealed class StatementHistoryGrid : UserControl
                 var chronological = line.WorldDay is int d
                     ? (long)d * 1440 +
                       (line.WorldTime is TimeOnly t ? t.Hour * 60 + t.Minute : 0)
-                    : -1L;
+                    : long.MinValue;
                 if (_showRelevance)
                     _table.Rows.Add(date, line.Speaker, line.Hearers,
                         line.Content, Math.Round(line.Relevance, 3), chronological, line.Id);
@@ -227,6 +257,61 @@ internal sealed class StatementHistoryGrid : UserControl
             EditExchangeRequested?.Invoke(id);
     }
 
+    private string? CurrentStatement() =>
+        (_results.CurrentRow?.DataBoundItem as DataRowView)?
+            .Row["What was said"]?.ToString();
+
+    private void CopyCurrentCell()
+    {
+        var value = _results.CurrentCell?.Value?.ToString();
+        if (value is not null) Clipboard.SetText(value);
+    }
+
+    private void CopyCurrentStatement()
+    {
+        var text = CurrentStatement();
+        if (!string.IsNullOrEmpty(text)) Clipboard.SetText(text);
+    }
+
+    private void ViewCurrentStatement()
+    {
+        var text = CurrentStatement();
+        if (text is null) return;
+        using var window = new Form
+        {
+            Text = "Full approved statement",
+            StartPosition = FormStartPosition.CenterParent,
+            MinimumSize = new Size(500, 280),
+            ClientSize = new Size(850, 440)
+        };
+        var view = new TextBox
+        {
+            Dock = DockStyle.Fill,
+            Multiline = true,
+            ReadOnly = true,
+            ScrollBars = ScrollBars.Vertical,
+            Text = text
+        };
+        var copy = new Button { Text = "Copy all", AutoSize = true };
+        copy.Click += (_, _) => Clipboard.SetText(view.Text);
+        var close = new Button
+        {
+            Text = "Close", AutoSize = true,
+            DialogResult = DialogResult.OK
+        };
+        var bottom = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Bottom, Height = 40,
+            FlowDirection = FlowDirection.RightToLeft
+        };
+        bottom.Controls.Add(close);
+        bottom.Controls.Add(copy);
+        window.Controls.Add(view);
+        window.Controls.Add(bottom);
+        window.AcceptButton = close;
+        window.ShowDialog(this);
+    }
+
     private void OnEditingFilterChanged(object? sender, EventArgs args)
     {
         if (_filter.CurrentCell is null ||
@@ -247,23 +332,19 @@ internal sealed class StatementHistoryGrid : UserControl
             for (var col = 0; col < _filter.Columns.Count; col++)
                 _filters[col] = _filter.Rows[0].Cells[col].Value?.ToString()?.Trim() ?? "";
 
-        var clauses = new List<string>();
-        foreach (var (index, text) in _filters)
-        {
-            if (index < 0 || index >= _table.Columns.Count ||
-                string.IsNullOrWhiteSpace(text))
-                continue;
-            var column = _table.Columns[index].ColumnName.Replace("]", "]]");
-            var escaped = text.Replace("'", "''")
-                .Replace("[", "[[]").Replace("*", "[*]").Replace("%", "[%]");
-            clauses.Add($"CONVERT([{column}], 'System.String') LIKE '%{escaped}%'");
-        }
-        _table.DefaultView.RowFilter = string.Join(" AND ", clauses);
+        _table.DefaultView.RowFilter =
+            GridTextFilter.Build(_table.Columns, _filters);
     }
 
     private void ShownInitialAlignment()
     {
         _results.DataBindingComplete += (_, _) => SyncWidths();
+        _results.CellToolTipTextNeeded += (_, e) =>
+        {
+            if (e.RowIndex < 0 || e.ColumnIndex != 3) return;
+            e.ToolTipText = _results.Rows[e.RowIndex].Cells[3].Value?.ToString();
+        };
+        _results.ShowCellToolTips = true;
         _filter.HandleCreated += (_, _) => SyncWidths();
     }
 

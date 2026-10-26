@@ -31,8 +31,8 @@ public sealed partial class NPCodexDatabase
         if (replyingNpcId <= 0 || initiatingCharacterId is not long initiatorId ||
             initiatorId <= 0 || initiatingCharacterId == replyingNpcId)
             throw new ArgumentException("Choose two different characters as speakers.");
-        if (when is null || when.Day < 1)
-            throw new ArgumentException("A campaign day of 1 or later is required.");
+        // Campaign day is signed: -1 means the day before day 0.
+        // A non-null WorldMoment is mandatory, including pre-campaign days.
         if (importance is < 1 or > 5)
             throw new ArgumentOutOfRangeException(nameof(importance));
         if (conversationId is <= 0)

@@ -1,5 +1,6 @@
 using NPCodex.AI;
 using NPCodex.Data;
+using System.Data;
 
 int passed=0,failed=0;
 void Check(string name,Action test)
@@ -161,6 +162,76 @@ Check("Guarded fallback can withhold a contact without fabricating one",()=>
         "Guarded",[red,millard],names);
     Assert(!reply.Contains("Red") && !reply.Contains("Kael"),
         "A guarded NPC may withhold the scout's identity.");
+});
+
+
+Check("Negative world moments are ordinary signed dates",()=>
+{
+    var day=new WorldMoment(-240,new TimeOnly(9,30));
+    Assert(day.Day==-240 &&
+        day.ToString()=="Day -240 at 09:30",
+        "Events centuries or months before the campaign stay negative.");
+    Assert(new WorldMoment(0,new TimeOnly(0,0)).Day==0,
+        "Campaign day zero is a valid prelude, not an unknown date.");
+});
+
+Check("Conversation chronology excludes future turns across negative days",()=>
+{
+    var turns=new[]
+    {
+        new ConversationTurn(1,1,"First","Earlier",DateTime.UtcNow)
+            { WorldDay=-20, WorldTime=new TimeOnly(8,0) },
+        new ConversationTurn(2,2,"Second","Today",DateTime.UtcNow)
+            { WorldDay=-5, WorldTime=new TimeOnly(8,0) },
+        new ConversationTurn(3,3,"Third","Later today",DateTime.UtcNow)
+            { WorldDay=-5, WorldTime=new TimeOnly(16,0) },
+        new ConversationTurn(4,4,"Fourth","Tomorrow",DateTime.UtcNow)
+            { WorldDay=-4, WorldTime=new TimeOnly(8,0) }
+    };
+    var chosen=NpcEvidenceScope.ExcludeFutureTurns(
+        turns,new WorldMoment(-5,new TimeOnly(9,0)));
+    Assert(chosen is not null && chosen.Count==2 &&
+        chosen.Select(t=>t.Id).SequenceEqual(new long[]{1,2}),
+        "Negative dates must respect chronological ordering and time.");
+});
+
+Check("Column filters combine text, bool and numeric cells",()=>
+{
+    var data=new DataTable();
+    data.Columns.Add("Character",typeof(string));
+    data.Columns.Add("Secret",typeof(bool));
+    data.Columns.Add("Score",typeof(double));
+    data.Rows.Add("Mira",true,0.91);
+    data.Rows.Add("Rowan",false,0.23);
+    data.Rows.Add("Millard",false,0.19);
+    data.DefaultView.RowFilter=GridTextFilter.Build(data.Columns,
+        new Dictionary<int,string>{{0,"mi"},{1,"False"}});
+    Assert(data.DefaultView.Count==1 &&
+        (string)data.DefaultView[0]["Character"]=="Millard",
+        "Both character-name and boolean column filters must work together.");
+    data.DefaultView.RowFilter=GridTextFilter.Build(data.Columns,
+        new Dictionary<int,string>{{2,"0.91"}});
+    Assert(data.DefaultView.Count==1 &&
+        (string)data.DefaultView[0]["Character"]=="Mira",
+        "Numeric scores must also support typed text filters.");
+});
+
+Check("Statement and memory search literal filters escape punctuation",()=>
+{
+    var data=new DataTable();
+    data.Columns.Add("What was said",typeof(string));
+    data.Rows.Add("Red's [map] is 40% complete *");
+    data.Rows.Add("Reds map is done");
+    foreach(var literal in new[]{"Red's","[map]","40%","*"})
+    {
+        data.DefaultView.RowFilter=GridTextFilter.Build(data.Columns,
+            new Dictionary<int,string>{{0,literal}});
+        Assert(data.DefaultView.Count==1,
+            $"Literal filter {literal} should not be interpreted as a wildcard.");
+    }
+    data.DefaultView.RowFilter=GridTextFilter.Build(data.Columns,
+        new Dictionary<int,string>{{0,""}});
+    Assert(data.DefaultView.Count==2,"Clearing the filter restores rows.");
 });
 
 Console.WriteLine($"{passed} passed; {failed} failed.");
