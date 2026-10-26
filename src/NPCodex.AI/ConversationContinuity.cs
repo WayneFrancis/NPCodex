@@ -90,6 +90,13 @@ internal static class ConversationContinuity
 
     private static HashSet<string> Tokens(string content)
     {
+        // Treat common two-word spellings as one concept, so "middle man"
+        // can match an earlier NPC claim to be an "intermediary", and
+        // "map maker" can match "cartographer"/"mapmaker".
+        content = Regex.Replace(content, @"\bmiddle[\s-]+m[ae]n\b", "middleman",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        content = Regex.Replace(content, @"\bmap[\s-]+makers?\b", "mapmaker",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         var tokens = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (Match match in Regex.Matches(content.ToLowerInvariant(),
                      @"[\p{L}\p{N}]{3,}"))
