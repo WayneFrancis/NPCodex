@@ -23,78 +23,23 @@ public sealed partial class NPCodexDatabase
     /// </summary>
     public async Task<bool> ForgetCharacterMemoryAsync(
         long campaignId, long characterId, long memoryId, string expectedContent,
-        CancellationToken cancellationToken = default,
-        bool forgetLinkedConversation = false)
+        CancellationToken cancellationToken = default)
     {
         RequireCampaignId(campaignId);
         if (characterId <= 0 || memoryId <= 0)
             throw new ArgumentOutOfRangeException(nameof(memoryId));
         RequireText(expectedContent, nameof(expectedContent));
 
-        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = """
+        await using var command = _dataSource.CreateCommand("""
             DELETE FROM memories
             WHERE campaign_id = $1 AND owner_character_id = $2
               AND memory_id = $3 AND content = $4
-            RETURNING source_interaction_id
-            """;
+            """);
         command.Parameters.AddWithValue(campaignId);
         command.Parameters.AddWithValue(characterId);
         command.Parameters.AddWithValue(memoryId);
         command.Parameters.AddWithValue(expectedContent);
-        var interaction = await command.ExecuteScalarAsync(cancellationToken);
-        if (interaction is null)
-            return false; // Deleted or edited elsewhere; transaction rolls back.
-
-        if (forgetLinkedConversation && interaction is long interactionId)
-        {
-            await using var marker = connection.CreateCommand();
-            marker.Transaction = transaction;
-            marker.CommandText = """
-                INSERT INTO character_forgotten_exchanges
-                    (campaign_id, character_id, interaction_id)
-                VALUES ($1, $2, $3) ON CONFLICT DO NOTHING
-                """;
-            marker.Parameters.AddWithValue(campaignId);
-            marker.Parameters.AddWithValue(characterId);
-            marker.Parameters.AddWithValue(interactionId);
-            await marker.ExecuteNonQueryAsync(cancellationToken);
-        }
-
-        await transaction.CommitAsync(cancellationToken);
-        return true;
-    }
-
-    public async Task<IReadOnlySet<long>> GetForgottenExchangeIdsAsync(
-        long campaignId, long characterId, CancellationToken cancellationToken = default)
-    {
-        RequireCampaignId(campaignId);
-        if (characterId <= 0) throw new ArgumentOutOfRangeException(nameof(characterId));
-        await using var cmd = _dataSource.CreateCommand("""
-            SELECT interaction_id FROM character_forgotten_exchanges
-            WHERE campaign_id = $1 AND character_id = $2
-            """);
-        cmd.Parameters.AddWithValue(campaignId);
-        cmd.Parameters.AddWithValue(characterId);
-        var ids = new HashSet<long>();
-        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
-            ids.Add(reader.GetInt64(0));
-        return ids;
-    }
-
-    public async Task<bool> HasCharacterForgettingSchemaAsync(
-        CancellationToken cancellationToken = default)
-    {
-        await using var cmd = _dataSource.CreateCommand("""
-            SELECT EXISTS (SELECT 1 FROM schema_migrations
-                           WHERE version = '0009_character_forgetting')
-            """);
-        return await cmd.ExecuteScalarAsync(cancellationToken) is true;
+        return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
     }
 
     public async Task<ApprovedStatementDeletionInfo?> GetApprovedStatementDeletionInfoAsync(
