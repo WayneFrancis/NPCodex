@@ -1794,3 +1794,5 @@ dotnet run --project src/NPCodex.RegressionTests
 ```
 
 The Windows GitHub Actions build runs these regressions on each change.
+
+Note: the column filters narrow the currently loaded results, not the database search scope. Clear individual filter cells to restore the loaded rows.
