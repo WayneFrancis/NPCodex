@@ -105,6 +105,7 @@ public sealed class NpcDialogueService
         // that happened later, even if the UI still shows those exchanges.
         var relevantHistory = NpcEvidenceScope.ExcludeFutureTurns(
             approvedHistory, currentMoment);
+        var continuity = ConversationContinuity.Select(relevantHistory, playerSays);
 
         var personality = await _database.GetNpcPersonalityAsync(
             campaignId, npcId, cancellationToken);
@@ -164,6 +165,11 @@ public sealed class NpcDialogueService
 
         if (speakerName is not null)
             relationshipStatus = $"Speaking to {speakerName}. " + relationshipStatus;
+        if (relevantHistory is { Count: > 0 })
+            relationshipStatus +=
+                $" Conversation context: {continuity.RecentCount} recent + " +
+                $"{continuity.EarlierRelevant.Count} relevant older approved exchanges " +
+                $"({relevantHistory.Count} chronologically eligible total).";
 
         // Include a different NPC's *non-secret, directed* relationship
         // only when that NPC is named unambiguously in this player's question.
@@ -243,6 +249,16 @@ public sealed class NpcDialogueService
                 disposition = r.Disposition,
                 subjectiveOpinion = r.Description
             }).ToArray(),
+            previouslyApprovedTopicReplies = continuity.EarlierRelevant.Select(t => new
+            {
+                exchangeId = t.Id,
+                npcPreviouslySaid = t.NpcReply.Length > 450
+                    ? t.NpcReply[..450] + "…" : t.NpcReply,
+                listenerPreviouslySaid = t.PlayerLine.Length > 180
+                    ? t.PlayerLine[..180] + "…" : t.PlayerLine,
+                happenedOnDay = t.WorldDay,
+                happenedAtTime = t.WorldTime?.ToString("HH:mm")
+            }).ToArray(),
             memories = memories.Select(m => new
             {
                 memoryId = m.Id,
@@ -305,6 +321,26 @@ public sealed class NpcDialogueService
             even if earlier approved dialogue sounded friendlier or colder.
             Preserve facts and commitments in prior history: changed attitude
             does not retroactively change what happened.
+            IMPORTANT CONVERSATION CONTINUITY: The previouslyApprovedTopicReplies
+            are verbatim excerpts from earlier DM-approved dialogue in THIS
+            ongoing conversation. They show what YOU (the NPC) previously
+            told the current listener, not necessarily objective world truth.
+            They are included because they relate to the present topic,
+            even if the exchange is older than the recent chat history.
+            Don't contradict or forget YOUR own previously stated role,
+            arrangements, contacts, capabilities or commitments without a
+            later, DM-approved correction or explicit reason in the context.
+            If you already told the listener that YOU handle arrangements
+            between clients and a specialist, don't redirect the listener
+            to contact that specialist directly as though you had no role.
+            If you previously said you use a particular scout or associate,
+            remember that arrangement when discussing that work.
+            Refer naturally to what you discussed before; do not recite
+            transcript excerpts or invent reasons for any change.
+            A statement made solely by the OTHER speaker is a claim the
+            listener made, not proof the NPC agreed with it.
+            DM-verified character memories take precedence over any
+            conflicting unverified assertion in spoken conversation.
             Keep it concise: 1-2 short paragraphs. Guarded can be 1 sentence.
             The three options MUST differ in disclosure of relevant information
             TO THE PERSON ASKING, not just friendly/adjective word choice.
@@ -422,7 +458,7 @@ public sealed class NpcDialogueService
                 style.Name + ": " + style.Direction +
                 previousAlternatives;
             var reply = await _chatClient.GenerateAsync(
-                system, playerSays.Trim(), cancellationToken, relevantHistory);
+                system, playerSays.Trim(), cancellationToken, continuity.Turns);
 
             // A model can repeat a candidate despite distinct disclosure
             // instructions. One additional request is justified here; don't
@@ -441,7 +477,7 @@ public sealed class NpcDialogueService
                 {
                     reply = await _chatClient.GenerateAsync(
                         variationRetry, playerSays.Trim(),
-                        cancellationToken, relevantHistory);
+                        cancellationToken, continuity.Turns);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
