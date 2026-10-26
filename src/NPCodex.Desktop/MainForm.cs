@@ -587,17 +587,22 @@ public sealed partial class MainForm : Form
             || _editingMemory is null)
             throw new InvalidOperationException("Select an existing memory to delete.");
 
-        if (MessageBox.Show(
-            "Delete this NPC memory permanently? Existing interaction history will remain.",
-            "Confirm memory deletion", MessageBoxButtons.YesNo, MessageBoxIcon.Warning)
+        if (MessageBox.Show(this,
+            "Make this NPC forget the selected memory permanently? " +
+            "The original conversation and other characters' memories " +
+            "will remain. This cannot be undone.",
+            "Forget NPC memory", MessageBoxButtons.YesNo,
+            MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2)
             != DialogResult.Yes) return;
 
-        if (!await _database.DeleteNpcMemoryAsync(
+        if (!await _database.ForgetCharacterMemoryAsync(
                 campaignId, npcId, _editingMemory.Id, _editingMemory.Content))
             throw new InvalidOperationException("The memory changed. Reload before deleting.");
 
+        ResetSuggestions();
         await LoadMemoriesAsync();
-        _status.Text = "Memory deleted.";
+        await SearchMemoriesAsyncIfAlreadyLoaded();
+        _status.Text = "NPC memory forgotten; conversation history is unchanged.";
     }
 
     private async Task GenerateAsync()
