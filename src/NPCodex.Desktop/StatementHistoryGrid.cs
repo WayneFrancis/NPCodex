@@ -21,6 +21,8 @@ internal sealed class StatementHistoryGrid : UserControl
     private bool _sortDescending;
     private readonly bool _showRelevance;
     public event Action<long>? EditExchangeRequested;
+    public event Action<long>? DeleteStatementRequested;
+    public event Action<long>? DeleteExchangeRequested;
 
     public StatementHistoryGrid(bool showRelevance)
     {
@@ -79,10 +81,28 @@ internal sealed class StatementHistoryGrid : UserControl
         var editMoment = new ToolStripMenuItem("Edit exchange date/time...");
         editMoment.Click += (_, _) => RequestEditCurrentStatement();
         editMenu.Items.Add(editMoment);
+        editMenu.Items.Add(new ToolStripSeparator());
+        var deleteStatement = new ToolStripMenuItem("Delete this statement...");
+        deleteStatement.Click += (_, _) =>
+        {
+            if (SelectedStatementId() is long id)
+                DeleteStatementRequested?.Invoke(id);
+        };
+        var deleteExchange = new ToolStripMenuItem("Delete entire exchange...");
+        deleteExchange.Click += (_, _) =>
+        {
+            if (SelectedStatementId() is long id)
+                DeleteExchangeRequested?.Invoke(id);
+        };
+        editMenu.Items.Add(deleteStatement);
+        editMenu.Items.Add(deleteExchange);
         editMenu.Opening += (_, e) =>
         {
-            editMoment.Enabled = SelectedStatementId() is not null;
-            if (!editMoment.Enabled) e.Cancel = true;
+            var enabled = SelectedStatementId() is not null;
+            editMoment.Enabled = enabled;
+            deleteStatement.Enabled = enabled;
+            deleteExchange.Enabled = enabled;
+            if (!enabled) e.Cancel = true;
         };
         _results.ContextMenuStrip = editMenu;
         _results.CellDoubleClick += (_, e) =>
