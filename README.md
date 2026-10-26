@@ -1682,3 +1682,37 @@ No new database migration is needed for this change. Pull with
 `git pull --ff-only` and launch with
 `dotnet run --project src/NPCodex.Desktop`. Source changes were
 statically reviewed but not locally compiled or run on Windows.
+
+
+### Fix: ordinary question wording must not trigger no-evidence fallback
+
+The initial named-subject guard could accidentally read a capitalized
+question opener as part of a proper noun, e.g. **"Would Red"**, causing
+the three canned no-evidence replies despite approved dialogue about
+Mira and her scouts. The subject parser now ignores common sentence
+openers (Would, Did, Can, etc.) while preserving legitimate titles such
+as **"Harbour Master"**. The fallback now also considers the topical
+content of approved, chronologically eligible NPC responses—not only
+exact repeats of the supposed named subject.
+
+**Regression:** In an existing Rowan/Mira conversation where Mira has
+already described brokering maps and scouting work, ask:
+
+> Mira, I'd like to commission another map. Remind me how you arrange
+> things between the map maker and your scouts. Would Red be involved?
+
+Previously this could return "I don't have any information I can confirm
+about that. Where did you hear it?" without consulting Qwen. It now
+should take the full dialogue path, using topic-relevant earlier approved
+exchanges. Check **Conversation context** in the DM status label to see
+how many earlier exchanges were recalled.
+
+The **Harbour Master** control case must still use the no-evidence
+fallback when a question occurs before the NPC has any relevant
+eligible memory or approved conversation. The status now also displays
+any detected **Named subject(s)**, making parser mistakes visible.
+
+This targeted fix requires no migration. It was statically inspected
+and the capitalization examples were verified against an equivalent
+regular-expression test; local .NET compilation and runtime testing are
+still required.
