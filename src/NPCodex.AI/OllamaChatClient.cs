@@ -40,7 +40,8 @@ public sealed class OllamaChatClient : IDisposable
             string.IsNullOrWhiteSpace(userMessage))
             throw new ArgumentException("System and user messages are required.");
 
-        // Only already-approved turns form short-term conversation context.
+        // The caller chooses a bounded set of recent PLUS relevant older
+        // approved turns. Do not silently discard older selected evidence.
         // Unapproved AI suggestions never become part of model history.
         var messages = new List<object>
         {
@@ -48,7 +49,7 @@ public sealed class OllamaChatClient : IDisposable
         };
         if (approvedHistory is not null)
         {
-            foreach (var turn in approvedHistory.TakeLast(8))
+            foreach (var turn in approvedHistory.TakeLast(12))
             {
                 var eventLabel = turn.WorldDay is int day
                     ? $"[Prior exchange on campaign Day {day}" +
@@ -94,7 +95,7 @@ public sealed class OllamaChatClient : IDisposable
     }
 
     private static string LimitTurn(string content) =>
-        content.Length <= 1500 ? content : content[..1500] + "…";
+        content.Length <= 650 ? content : content[..650] + "…";
 
     public void Dispose() => _client.Dispose();
 
