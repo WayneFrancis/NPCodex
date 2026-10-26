@@ -198,7 +198,7 @@ public sealed class NpcDialogueService
         // Each result remains an editable, DM-approved suggestion.
         if (namedSubjects.Count > 0 && memories.Length == 0 &&
             !NpcEvidenceScope.HasPriorNpcStatementAbout(
-                relevantHistory, namedSubjects))
+                relevantHistory, namedSubjects, playerSays))
         {
             var safeOptions = Styles.Take(count)
                 .Select(style => new NpcReplyOption(
