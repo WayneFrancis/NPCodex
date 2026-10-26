@@ -188,7 +188,8 @@ public sealed class NpcDialogueService
         var excludedAsOffTopic = candidateMemories.Count - topicEligible.Count;
         if (namedSubjects.Count > 0)
             relationshipStatus +=
-                $" Topic evidence: {memories.Length} relevant memory/memories; " +
+                $" Named subject(s): {string.Join(", ", namedSubjects)}. " +
+                $"Topic evidence: {memories.Length} relevant memory/memories; " +
                 $"{excludedAsOffTopic} other candidate(s) excluded.";
 
         // An explicit question about a named subject must not turn a vector
