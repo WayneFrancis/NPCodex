@@ -71,7 +71,10 @@ public sealed class OllamaChatClient : IDisposable
             stream = false,
             think = false,
             messages,
-            options = new { temperature = 0.6, num_predict = 250 }
+            // Leave enough prompt room for the older relevant exchanges that
+            // NpcDialogueService deliberately selected, as well as the current
+            // character and memory constraints. Still bounded for local Ollama.
+            options = new { temperature = 0.6, num_predict = 250, num_ctx = 8192 }
         };
 
         using var response = await _client.PostAsJsonAsync(
