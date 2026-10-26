@@ -19,6 +19,19 @@ internal static class NpcEvidenceScope
     private static readonly HashSet<string> LeadingArticles =
         new(StringComparer.OrdinalIgnoreCase) { "The", "A", "An" };
 
+    // Capitalization at the start of a sentence is not a named entity.
+    // In "Would Red be involved?", "Would Red" is not a character name.
+    // Keep real multiword subjects such as "Harbour Master" intact.
+    private static readonly HashSet<string> NonNameFirstWords =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            "Would", "Could", "Should", "Can", "Will", "Do", "Does", "Did",
+            "Have", "Has", "Had", "Is", "Are", "Was", "Were", "What",
+            "Who", "Where", "When", "Why", "How", "Which", "May",
+            "Might", "Shall", "Must", "Please", "Tell", "Ask",
+            "Remind", "Hello", "Hi", "Hey", "Dear", "Thanks"
+        };
+
     internal static IReadOnlyList<string> NamedSubjects(string question)
     {
         var subjects = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -27,6 +40,7 @@ internal static class NpcEvidenceScope
             var words = match.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries);
             var start = words.Length > 2 && LeadingArticles.Contains(words[0]) ? 1 : 0;
             if (words.Length - start < 2) continue;
+            if (NonNameFirstWords.Contains(words[start])) continue;
             var name = string.Join(' ', words.Skip(start));
             subjects.Add(name);
         }
