@@ -868,7 +868,7 @@ public sealed partial class MainForm : Form
             _memorySearchOwners.Enabled = _memorySearchOwnerFilter.Enabled =
             _memorySearchPhrase.Enabled = _memorySearchMode.Enabled =
             _memorySearchSecrets.Enabled = _memorySearchButton.Enabled =
-            _memoryEmbedButton.Enabled = false;
+            _memoryEmbedButton.Enabled = _forgetMemoryButton.Enabled = false;
         UseWaitCursor = true;
         try { await operation(); }
         catch (Exception ex)
@@ -915,6 +915,7 @@ public sealed partial class MainForm : Form
             _memorySearchPhrase.Enabled = _memorySearchMode.Enabled =
             _memorySearchSecrets.Enabled = _memorySearchButton.Enabled =
             _memoryEmbedButton.Enabled = true;
+            _forgetMemoryButton.Enabled = SelectedMemorySearchHit() is not null;
             _suggestNpcOpening.Enabled = CampaignId is not null;
             _createMemoryOnApproval.Enabled = SelectedResponderIsNpc;
         }
