@@ -1716,3 +1716,43 @@ This targeted fix requires no migration. It was statically inspected
 and the capitalization examples were verified against an equivalent
 regular-expression test; local .NET compilation and runtime testing are
 still required.
+
+
+### NPC opinion/history used for unnamed work contacts
+
+When Rowan asks Mira which scout she would commission to gather
+information for Millard, the relevant source is Mira's directed
+**Personality & Relationships → NPC's opinion / history** entry for
+Darrin Reed / Red. Older versions sent NPC-to-NPC relationship histories
+to Ollama only when the player explicitly named that target. A
+question about *a scout* therefore omitted Red's known role entirely,
+even though the stored history says Mira hires scouts and Red is her
+first choice.
+
+The dialogue layer now selects up to five **non-secret, topic-relevant
+directed NPC histories**, including people mentioned by occupational
+role, and passes their descriptions and known aliases to the model.
+Explicitly mentioned characters are still prioritized. The DM status
+shows which contacts were matched by name versus history/role. This
+does not expose all unrelated relationships or any secret entries.
+
+The model is also instructed to preserve the speaker's established
+responsibility for arranging work. For example, a broker should not
+send Rowan directly to Millard to hire a scout. A named referral that
+is absent from the supplied campaign names and supporting evidence
+is rejected and retried once; if still unsupported, the result is a
+cautious, editable draft, not a fabricated character. Neither the
+system nor the model should assert that Red already knows the swamps
+unless an eligible source actually says so.
+
+**Regression checks** run without PostgreSQL or Ollama:
+
+```powershell
+dotnet run --project src/NPCodex.RegressionTests
+```
+
+Run the full build with `dotnet build NPCodex.slnx`. Windows GitHub
+Actions now builds the solution and runs the dialogue checks on each
+push. No schema migration or re-embedding is required; opinions and
+histories are read from their existing database records. The existing
+DM approval workflow is unchanged.

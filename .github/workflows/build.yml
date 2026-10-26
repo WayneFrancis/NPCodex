@@ -1,0 +1,19 @@
+name: NPCodex build and regression tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  windows-build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Build solution
+        run: dotnet build NPCodex.slnx --configuration Release
+      - name: Run dialogue regression tests
+        run: dotnet run --project src/NPCodex.RegressionTests --configuration Release --no-build

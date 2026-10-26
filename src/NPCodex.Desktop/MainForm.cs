@@ -649,6 +649,7 @@ public sealed partial class MainForm : Form
         var fixedCount = choices.Options.Count(o => o.SpeakerWordingAdjusted);
         var speakerWarnings = choices.Options.Count(o => o.NeedsSpeakerReview);
         var disclosureWarnings = choices.Options.Count(o => o.NeedsDisclosureReview);
+        var groundingCorrections = choices.Options.Count(o => o.GroundingAdjusted);
         _relationshipStatus.Text = choices.RelationshipStatus +
             (fixedCount > 0 ? $" Corrected speaker wording in {fixedCount} draft(s)." : "") +
             (speakerWarnings > 0
@@ -656,6 +657,9 @@ public sealed partial class MainForm : Form
                 : "") +
             (disclosureWarnings > 0
                 ? $" {disclosureWarnings} candidate(s) have similar disclosures: edit or retry."
+                : "") +
+            (groundingCorrections > 0
+                ? $" Removed unsupported contacts or restored the intermediary role in {groundingCorrections} draft(s)."
                 : "");
         for (var i = 0; i < choices.Options.Count; i++)
         {
@@ -684,6 +688,9 @@ public sealed partial class MainForm : Form
                     : "") +
             (disclosureWarnings > 0
                 ? $"Check {disclosureWarnings} near-duplicate dialogue draft(s). "
+                : "") +
+            (groundingCorrections > 0
+                ? $"Grounding corrected in {groundingCorrections} draft(s). "
                 : "") +
             "Nothing saved.";
     }

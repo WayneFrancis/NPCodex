@@ -8,7 +8,8 @@ public sealed record NpcReplyOption(
     string Style, string Text,
     bool SpeakerWordingAdjusted = false,
     bool NeedsSpeakerReview = false,
-    bool NeedsDisclosureReview = false);
+    bool NeedsDisclosureReview = false,
+    bool GroundingAdjusted = false);
 
 /// <summary>For DM inspection only; generated candidates are not saved.</summary>
 public sealed record NpcDialogueChoices(
@@ -171,19 +172,21 @@ public sealed class NpcDialogueService
                 $"{continuity.EarlierRelevant.Count} relevant older approved exchanges " +
                 $"({relevantHistory.Count} chronologically eligible total).";
 
-        // Include a different NPC's *non-secret, directed* relationship
-        // only when that NPC is named unambiguously in this player's question.
-        // A generic query must not reveal the speaker NPC's entire social graph.
-        var referencedNpcRelationships = (await _database.GetNpcRelationshipsAsync(
-            campaignId, npcId, cancellationToken))
-            .Where(r => r.TargetType == "npc" && !r.IsSecret &&
-                        CampaignNameMatcher.Mentions(
-                            playerSays, campaignNames, r.TargetId))
-            .Take(5)
-            .ToArray();
-        if (referencedNpcRelationships.Length > 0)
-            relationshipStatus += " Referenced NPCs: " +
-                string.Join(", ", referencedNpcRelationships.Select(r => r.TargetName)) + ".";
+        // The NPC's "opinion / history" of Red can describe their usual
+        // scout, even when Rowan asks "which scout?" instead of saying
+        // "Red". Exact name matches win; other non-secret directed histories
+        // need specific topical overlap. No unrelated social graph, secrets,
+        // or relationship toward the listener are included as contacts.
+        var referencedNpcRelationships = NpcRelationshipScope.Select(
+            await _database.GetNpcRelationshipsAsync(
+                campaignId, npcId, cancellationToken),
+            campaignNames, playerSays);
+        if (referencedNpcRelationships.Count > 0)
+            relationshipStatus += " Relevant NPC contacts: " +
+                string.Join(", ", referencedNpcRelationships.Select(r=>
+                    r.TargetName +
+                    (CampaignNameMatcher.Mentions(playerSays,campaignNames,r.TargetId)
+                        ? " (named)" : " (history/role match)"))) + ".";
 
         var excludedAsOffTopic = candidateMemories.Count - topicEligible.Count;
         if (namedSubjects.Count > 0)
@@ -198,6 +201,7 @@ public sealed class NpcDialogueService
         // support this subject, bypass free-form generation entirely.
         // Each result remains an editable, DM-approved suggestion.
         if (namedSubjects.Count > 0 && memories.Length == 0 &&
+            referencedNpcRelationships.Count == 0 &&
             !NpcEvidenceScope.HasPriorNpcStatementAbout(
                 relevantHistory, namedSubjects, playerSays))
         {
@@ -248,7 +252,7 @@ public sealed class NpcDialogueService
                 npcName = r.TargetName,
                 knownAliases = CampaignNameMatcher.NamesOf(campaignNames, r.TargetId),
                 disposition = r.Disposition,
-                subjectiveOpinion = r.Description
+                subjectiveOpinionAndHistory = r.Description
             }).ToArray(),
             previouslyApprovedTopicReplies = continuity.EarlierRelevant.Select(t => new
             {
@@ -291,11 +295,16 @@ public sealed class NpcDialogueService
             If a directed relationship is provided, adapt warmth/caution
             using its disposition (-100 strongly negative, +100 positive).
             The relationship is the NPC's subjective view, not objective fact.
-            If opinionsOfMentionedNpcs contains an entry, it is your
-            CHARACTER'S subjective attitude toward an NPC being mentioned by
-            the player. It is NOT your opinion of the current speaker.
-            Express that stance naturally when discussing the mentioned NPC.
-            Never treat an opinion as an objective fact or invent an incident.
+            The opinionsOfMentionedNpcs field contains selected non-secret
+            directed relationships from this NPC: either someone the PLAYER
+            named, or an NPC whose stored opinion / history directly matches
+            the JOB or SERVICE being discussed. It is not a dump of all contacts.
+            Each subjectiveOpinionAndHistory field may describe both your
+            opinion of that person AND actual arrangements you remember.
+            Treat stated work responsibilities and preferred contacts as your
+            established first-person history, not as a mere personality trait.
+            It is NOT your attitude toward the current speaker; do not turn
+            your opinion into objective proof of unrelated events.
             If an NPC has multiple names in knownAliases, those names all
             identify one character; do not invent two different people.
             Only use the named relationships actually provided, not a guessed
@@ -334,6 +343,18 @@ public sealed class NpcDialogueService
             If you already told the listener that YOU handle arrangements
             between clients and a specialist, don't redirect the listener
             to contact that specialist directly as though you had no role.
+            If your relevant relationship history or approved conversation says
+            YOU broker/commission map-making, hire scouts or arrange their work,
+            respond as the person who handles that transaction. Don't hand the
+            client off to the mapmaker to hire a scout themselves unless later
+            evidence says your role changed.
+            If your non-secret relationship history names a FIRST-PICK scout,
+            use that known scout for a request to recommend someone; do not
+            create a different named scout or fictional credentials. If it does
+            not establish their knowledge of the requested region, say you
+            would need to ask or check, not that they already know the terrain.
+            The current listener's trust level may justify withholding the
+            contact, but not inventing an alternative contact.
             If you previously said you use a particular scout or associate,
             remember that arrangement when discussing that work.
             Refer naturally to what you discussed before; do not recite
@@ -528,10 +549,67 @@ public sealed class NpcDialogueService
                 }
             }
 
+            // A small LLM may invent a persuasive new hire by name despite
+            // explicit grounding instructions, or redirect clients to the
+            // specialist even though this NPC is their established broker.
+            // Make one bounded evidence-led retry, then use a cautious,
+            // editable, NON-FABRICATED fallback rather than pass invented
+            // NPCs (e.g. "Kael") into an approvable draft.
+            var evidenceText=memories.Select(m=>m.Content)
+                .Concat(referencedNpcRelationships.Select(r=>r.Description))
+                .Concat(continuity.Turns.SelectMany(t=>
+                    new[]{t.NpcReply,t.PlayerLine}))
+                .ToArray();
+            string? invented=NpcContactGroundingCheck.UnsupportedName(
+                playerSays,reply,campaignNames,evidenceText);
+            bool contradicted=NpcContactGroundingCheck.ContradictsBrokerResponsibility(
+                playerSays,reply,referencedNpcRelationships);
+            bool groundingAdjusted=false;
+            if(invented is not null || contradicted)
+            {
+                var correction=system +
+                    "\n\nFACTUAL CORRECTION REQUIRED: Your first draft " +
+                    (invented is not null
+                        ? $"introduced unsupported named contact '{invented}'. "
+                        : "") +
+                    (contradicted
+                        ? "wrongly told the client to bypass the speaker's " +
+                          "established broker/commissioning role. "
+                        : "") +
+                    "Use only people and roles supported by the supplied " +
+                    "relationship history, memories and approved dialogue. " +
+                    "If no person's swamp knowledge is recorded, don't claim " +
+                    "they know the swamps. Answer IN CHARACTER as the speaker " +
+                    "who arranges the work; don't invent another contact.";
+                try
+                {
+                    reply=await _chatClient.GenerateAsync(
+                        correction,playerSays.Trim(),cancellationToken,
+                        continuity.Turns);
+                }
+                catch(OperationCanceledException) when(cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch(Exception)
+                {
+                    // The caller still receives a safe, editable fallback.
+                }
+                invented=NpcContactGroundingCheck.UnsupportedName(
+                    playerSays,reply,campaignNames,evidenceText);
+                contradicted=NpcContactGroundingCheck.ContradictsBrokerResponsibility(
+                    playerSays,reply,referencedNpcRelationships);
+                if(invented is not null || contradicted)
+                    reply=NpcContactGroundingCheck.CautiousBrokerReply(
+                        style.Name,referencedNpcRelationships,campaignNames);
+                groundingAdjusted=true;
+            }
+
             var needsDisclosureReview =
                 options.Any(o => DialogueVariationCheck.TooSimilar(o.Text, reply));
             options.Add(new NpcReplyOption(
-                style.Name, reply, adjusted, reviewNeeded, needsDisclosureReview));
+                style.Name, reply, adjusted, reviewNeeded,
+                needsDisclosureReview, groundingAdjusted));
         }
 
         return new NpcDialogueChoices(npc, options, _chatClient.ModelName, memories)
