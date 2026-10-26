@@ -1624,3 +1624,61 @@ other exchange is unchanged. Finally try whole-exchange deletion.
 The UI should refresh Memory Search, Conversation History and recent
 approved-turn context after deletion. Code is committed but not yet
 compiled or database-tested in your Windows environment.
+
+
+## Ongoing-conversation continuity: recent AND relevant earlier speech
+
+Previously the dialogue client silently sent **only the last eight**
+approved exchanges to Qwen. This often made an NPC forget an earlier
+statement about their own job, an intermediary arrangement, a known
+scout, or a commitment, even during the **same open conversation**.
+
+Now the response generator selects:
+- Up to **6 recent approved exchanges** from the current NPC/listener
+  conversation.
+- Up to **5 older approved exchanges** that overlap the topic of the
+  latest question. NPC replies are weighted more heavily than claims
+  made by the listener.
+- For very short follow-ups, extra topic words are taken from the
+  immediately preceding approved exchange.
+- The selected exchanges are presented in their original order.
+  A short, explicit reference excerpt of older relevant NPC replies
+  is also provided in the dialogue context and labelled as **what the
+  NPC previously said**, not necessarily objective world truth.
+- Future-dated turns are excluded before selection, and Qwen's prompt
+  context is set to 8192 tokens. Very long individual past messages are
+  truncated for local performance.
+
+The DM relationship/status label shows counts of recent versus older
+approved exchanges recalled for that reply. Changes only affect model
+context, not the stored conversation or any character memory.
+
+Example regression using **Mira, Rowan, Red and a map maker**:
+1. Have Mira tell Rowan that she is the intermediary between the client,
+   scouts, and cartographer, and that **Red is a scout she uses**.
+   Approve those replies.
+2. Approve at least nine **other** exchanges so her first explanation
+   falls beyond the original last-eight cutoff.
+3. Ask Rowan's next line about getting a map commissioned, how the
+   scouting will be arranged, or specifically who Red is.
+4. Verify the status mentions older relevant approved exchanges and
+   Mira acknowledges her prior intermediary/scout arrangement instead
+   of sending Rowan to deal directly with the map maker.
+5. Rewind campaign day/time before the role discussion and verify those
+   future-dated exchanges are **not** in the dialogue context.
+
+The identity matcher is also case-insensitive now: `red` and `Red`
+can resolve to the same unambiguous character.
+
+**Limitations:** this is a bounded lexical continuity selector, not an
+authoritative world-state or role registry. It cannot guarantee a local
+LLM will never contradict itself, and it only uses the current NPC/listener
+session's approved dialogue, not arbitrary past sessions. For crucial
+persistent facts, store a DM-approved **Verified fact** memory belonging
+to Mira as well. Saved memories continue to use the existing semantic
+retrieval and chronology rules.
+
+No new database migration is needed for this change. Pull with
+`git pull --ff-only` and launch with
+`dotnet run --project src/NPCodex.Desktop`. Source changes were
+statically reviewed but not locally compiled or run on Windows.
