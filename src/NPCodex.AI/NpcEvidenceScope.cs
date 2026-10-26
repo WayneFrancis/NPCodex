@@ -111,11 +111,50 @@ internal static class NpcEvidenceScope
             .ToArray();
     }
 
+    /// <summary>
+    /// Conversation statements are evidence of what the NPC ALREADY SAID,
+    /// not automatic proof that their claims are objectively true.
+    /// Do not fall back to "I know nothing" simply because an earlier reply
+    /// used "he", "my scout", or "the cartographer" instead of repeating a
+    /// question's full named subject. Require specific topical overlap to
+    /// avoid pulling in unrelated map-making conversations.
+    /// </summary>
     internal static bool HasPriorNpcStatementAbout(
-        IReadOnlyList<ConversationTurn>? history, IReadOnlyList<string> names) =>
-        history is not null &&
-        history.Any(turn => names.Any(name =>
-            turn.NpcReply.Contains(name, StringComparison.OrdinalIgnoreCase)));
+        IReadOnlyList<ConversationTurn>? history, IReadOnlyList<string> names,
+        string question)
+    {
+        if (history is null || names.Count == 0) return false;
+
+        var topicText = question;
+        foreach (var name in names)
+            topicText = topicText.Replace(name, "", StringComparison.OrdinalIgnoreCase);
+        var topicWords = ContentWords.Matches(topicText.ToLowerInvariant())
+            .Select(m => Simplify(m.Value))
+            .Where(w => !QuestionFillers.Contains(w))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var turn in history)
+        {
+            // A previously approved statement on the named subject is itself
+            // enough evidence to continue that exact earlier conversation.
+            if (names.Any(name => turn.NpcReply.Contains(
+                    name, StringComparison.OrdinalIgnoreCase)))
+                return true;
+
+            var spokenWords = ContentWords.Matches(
+                    turn.NpcReply.ToLowerInvariant())
+                .Select(m => Simplify(m.Value))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var overlap = topicWords.Count(spokenWords.Contains);
+            if (overlap >= 2)
+                return true;
+
+            if (overlap > 0 && names.Any(name => turn.PlayerLine.Contains(
+                    name, StringComparison.OrdinalIgnoreCase)))
+                return true;
+        }
+        return false;
+    }
 
     internal static string UnverifiedFallback(string style) => style switch
     {
