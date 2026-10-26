@@ -8,6 +8,7 @@ public sealed record NpcMemoryRecord(
     public TimeOnly? WorldTime { get; init; }
     public string KnowledgeStatus { get; init; } = MemoryKnowledgeStatus.Recollection;
     public string? KnowledgeSource { get; init; }
+    public long? SourceInteractionId { get; init; }
 }
 
 public sealed record ApprovedDialogue(long InteractionId, long? MemoryId, long SessionId);
