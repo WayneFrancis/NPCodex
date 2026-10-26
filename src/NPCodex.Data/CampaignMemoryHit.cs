@@ -11,4 +11,5 @@ public sealed record CampaignMemoryHit(
 {
     public string KnowledgeStatus { get; init; } = MemoryKnowledgeStatus.Recollection;
     public string? KnowledgeSource { get; init; }
+    public long? SourceInteractionId { get; init; }
 }
