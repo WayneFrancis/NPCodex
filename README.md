@@ -1567,3 +1567,60 @@ Regression tests:
 
 The code has been committed and statically reviewed; a local Windows
 `dotnet build` and PostgreSQL migration test are still required.
+
+
+## Remove mistaken conversation entries (no new migration)
+
+Approved conversation records and character memories have deliberately
+different deletion behaviour:
+
+- **Forget one character memory:** Existing **Memories → Delete** removes
+  the selected NPC's memory. **Memory Search → Forget selected memory...**
+  also supports PC memories and campaign-wide search results. Only the
+  selected character's one memory and its embedding are deleted; the
+  original interaction, conversation transcript, other characters'
+  memories and other history remain in the database. Deletion is
+  confirmed, campaign- and owner-scoped, and refuses to remove a memory
+  whose text has changed since it was selected.
+- **Delete one approved statement:** In **Conversation History**,
+  right-click an individual statement in either the conversation-members
+  list or a search-result tab and choose **Delete this statement...**.
+  The original two-person conversation turn redundantly stores both
+  spoken lines, so that turn is also removed to avoid keeping a copy of
+  the deleted words. The other statement survives in searchable
+  statement history. Because linked memories may quote *both* sides,
+  **all memories sourced from this exchange are deleted**, not just
+  the selected speaker's. The parent interaction transcript is rebuilt
+  from surviving statements and no longer includes erased words.
+- **Delete entire exchange:** Right-click a statement and choose
+  **Delete entire exchange...**. After confirmation this removes its
+  statements, statement hearers, linked conversation turns, sourced
+  memories, interaction participants, correction-audit rows and parent
+  interaction. It does not affect other exchanges.
+
+The confirmation names the exchange, previews the words and reports the
+number of linked memories. All related deletion runs inside a PostgreSQL
+transaction: on failure it rolls back. There is no additional database
+migration beyond the earlier **0008**; these operations use existing
+tables.
+
+Important: **memory deletion alone is not a complete magic mind wipe**.
+The character may still have approved dialogue history or *other*
+memories describing the same event, and the dialogue model can use
+those sources. For a campaign in which a character truly forgets the
+event, review the remaining character-specific history separately;
+there is no automated selective forgetting of approved conversation
+turns. Also, a full deletion does not remove unrelated manually
+authored memories that happen to refer to the erased event but are
+not linked to it by `source_interaction_id`. Check those via Memory
+Search if complete erasure is needed. These limitations prevent silently
+erasing other characters' unrelated knowledge.
+
+**Suggested verification:** Create two consecutive approved exchanges
+with at least one witness memory. First remove an NPC's memory and
+confirm both exchanges remain. Then delete only one statement from
+one exchange; confirm its remaining statement is searchable and the
+other exchange is unchanged. Finally try whole-exchange deletion.
+The UI should refresh Memory Search, Conversation History and recent
+approved-turn context after deletion. Code is committed but not yet
+compiled or database-tested in your Windows environment.
