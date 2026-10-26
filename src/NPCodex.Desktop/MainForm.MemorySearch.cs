@@ -43,6 +43,10 @@ public sealed partial class MainForm
     {
         Text = "Embed missing (up to 100)", AutoSize = true
     };
+    private readonly Button _forgetMemoryButton = new()
+    {
+        Text = "Forget selected memory...", AutoSize = true, Enabled = false
+    };
     private readonly Label _memorySearchScope = new()
     {
         Dock = DockStyle.Fill,
@@ -127,6 +131,7 @@ public sealed partial class MainForm
         searchBar.Controls.Add(_memorySearchButton);
         searchBar.Controls.Add(_memorySearchSecrets);
         searchBar.Controls.Add(_memoryEmbedButton);
+        searchBar.Controls.Add(_forgetMemoryButton);
         right.Controls.Add(searchBar, 0, 0);
         right.Controls.Add(_memorySearchInfo, 0, 1);
 
@@ -150,6 +155,24 @@ public sealed partial class MainForm
         }
         _memorySearchGrid.Columns[7].DefaultCellStyle.Format = "0.000";
         _memorySearchGrid.DataSource = _memorySearchTable.DefaultView;
+        var menu = new ContextMenuStrip();
+        var forget = new ToolStripMenuItem("Forget/delete this character memory...");
+        forget.Click += async (_, _) =>
+            await RunBusyAsync(ForgetSelectedMemoryAsync);
+        menu.Items.Add(forget);
+        menu.Opening += (_, e) =>
+        {
+            forget.Enabled = SelectedMemorySearchHit() is not null && !_busy;
+            if (!forget.Enabled) e.Cancel = true;
+        };
+        _memorySearchGrid.ContextMenuStrip = menu;
+        _memorySearchGrid.CellMouseDown += (_, e) =>
+        {
+            if (e.Button == MouseButtons.Right && e.RowIndex >= 0)
+                _memorySearchGrid.CurrentCell =
+                    _memorySearchGrid.Rows[e.RowIndex].Cells[
+                        Math.Max(e.ColumnIndex, 0)];
+        };
         right.Controls.Add(_memorySearchGrid, 0, 2);
         var preview = new GroupBox { Text = "Selected memory (read-only)", Dock = DockStyle.Fill };
         preview.Controls.Add(_memorySearchPreview);
@@ -176,13 +199,20 @@ public sealed partial class MainForm
             await RunBusyAsync(SearchMemoriesAsync);
         _memoryEmbedButton.Click += async (_, _) =>
             await RunBusyAsync(EmbedPendingMemoriesAsync);
+        _forgetMemoryButton.Click += async (_, _) =>
+            await RunBusyAsync(ForgetSelectedMemoryAsync);
         _memorySearchPhrase.KeyDown += async (_, e) =>
         {
             if (e.KeyCode != Keys.Enter) return;
             e.SuppressKeyPress = true;
             await RunBusyAsync(SearchMemoriesAsync);
         };
-        _memorySearchGrid.SelectionChanged += (_, _) => ShowMemorySearchPreview();
+        _memorySearchGrid.SelectionChanged += (_, _) =>
+        {
+            ShowMemorySearchPreview();
+            _forgetMemoryButton.Enabled = !_busy &&
+                SelectedMemorySearchHit() is not null;
+        };
         _memorySearchOwners.KeyDown += (_, e) =>
         {
             if (e.KeyCode != Keys.Delete ||
@@ -244,6 +274,7 @@ public sealed partial class MainForm
         _memorySearchPreview.Clear();
         _memorySearchInfo.Text =
             "Choose characters, or leave the list empty for everyone in the campaign.";
+        _forgetMemoryButton.Enabled = false;
         PopulateMemorySearchCharacters();
     }
 
@@ -295,6 +326,7 @@ public sealed partial class MainForm
         }
         finally { _memorySearchTable.EndLoadData(); }
         _memorySearchPreview.Clear();
+        _forgetMemoryButton.Enabled = !_busy && SelectedMemorySearchHit() is not null;
         _memorySearchInfo.Text = $"{found.Count} memories shown" +
             (owners.Length == 0 ? " (all characters)" :
                 $" ({owners.Length} selected characters)") +
@@ -303,12 +335,21 @@ public sealed partial class MainForm
                 : ". Text matches and recent memories; empty query browses memories.");
     }
 
-    private void ShowMemorySearchPreview()
+    private CampaignMemoryHit? SelectedMemorySearchHit()
     {
         if (_memorySearchGrid.CurrentRow?.Cells[0].Value is not long memoryId)
+            return null;
+        return _memorySearchResults.FirstOrDefault(m => m.MemoryId == memoryId);
+    }
+
+    private void ShowMemorySearchPreview()
+    {
+        var memory = SelectedMemorySearchHit();
+        if (memory is null)
+        {
+            _memorySearchPreview.Clear();
             return;
-        var memory = _memorySearchResults.FirstOrDefault(m => m.MemoryId == memoryId);
-        if (memory is null) return;
+        }
         _memorySearchPreview.Text =
             $"{memory.OwnerName} ({memory.OwnerType.ToUpperInvariant()}) | " +
             $"{memory.MemoryType} | " +
@@ -323,6 +364,45 @@ public sealed partial class MainForm
                 ? ""
                 : Environment.NewLine + "Source: " + memory.KnowledgeSource) +
             Environment.NewLine + Environment.NewLine + memory.Content;
+    }
+
+    private async Task ForgetSelectedMemoryAsync()
+    {
+        if (CampaignId is not long campaignId)
+            throw new InvalidOperationException("Select a campaign.");
+        var memory = SelectedMemorySearchHit() ??
+            throw new InvalidOperationException("Choose the memory to forget.");
+
+        var preview = memory.Content.Length > 360
+            ? memory.Content[..360] + "..." : memory.Content;
+        var linkedMessage = memory.MemoryType is "overheard" or "experience"
+            ? "If this memory was created from approved dialogue, that " +
+              "dialogue remains in history. Other characters may still remember it."
+            : "Other characters' memories and the campaign's approved " +
+              "dialogue remain unchanged.";
+
+        if (MessageBox.Show(this,
+            $"Permanently remove memory #{memory.MemoryId} from " +
+            $"{memory.OwnerName}'s mind?\n\n\"{preview}\"\n\n" +
+            linkedMessage +
+            "\n\nOnly this one memory (and its embedding) will be deleted. " +
+            "The operation cannot be undone.",
+            "Forget character memory", MessageBoxButtons.YesNo,
+            MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2)
+            != DialogResult.Yes)
+            return;
+
+        if (!await _database.ForgetCharacterMemoryAsync(campaignId,
+            memory.OwnerCharacterId, memory.MemoryId, memory.Content))
+            throw new InvalidOperationException(
+                "Memory was already removed or modified. Search again.");
+        ResetSuggestions(); // Prevent accepting a suggestion based on forgotten evidence.
+        await SearchMemoriesAsync();
+        if (NpcId == memory.OwnerCharacterId)
+            await LoadMemoriesAsync();
+        _status.Text =
+            $"Memory #{memory.MemoryId} forgotten by {memory.OwnerName}. " +
+            "Other characters' memories and conversation history are unchanged.";
     }
 
     private async Task EmbedPendingMemoriesAsync()
