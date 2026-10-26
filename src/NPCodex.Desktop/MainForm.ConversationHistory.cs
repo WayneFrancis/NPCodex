@@ -60,6 +60,7 @@ public sealed partial class MainForm
         layout.Controls.Add(searchBar, 0, 0);
 
         _rosterHistoryTab.Controls.Add(_rosterGrid);
+        WireStatementDeletion(_rosterGrid);
         _rosterGrid.EditExchangeRequested += async id =>
             await EditConversationMomentAsync(id);
         _statementTabs.TabPages.Add(_rosterHistoryTab);
@@ -81,6 +82,14 @@ public sealed partial class MainForm
         _statementTabs.ContextMenuStrip = tabMenu;
         layout.Controls.Add(_statementTabs, 0, 1);
         return layout;
+    }
+
+    private void WireStatementDeletion(StatementHistoryGrid grid)
+    {
+        grid.DeleteStatementRequested += async id =>
+            await DeleteApprovedSpeechAsync(id, wholeExchange: false);
+        grid.DeleteExchangeRequested += async id =>
+            await DeleteApprovedSpeechAsync(id, wholeExchange: true);
     }
 
     private void WireHistoryEvents()
@@ -175,6 +184,7 @@ public sealed partial class MainForm
         var tab = new TabPage(
             $"{(semantic ? "≈ " : "")}{title} ({result.Count})");
         var grid = new StatementHistoryGrid(showRelevance: true);
+        WireStatementDeletion(grid);
         grid.EditExchangeRequested += async id =>
             await EditConversationMomentAsync(id);
         tab.Controls.Add(grid);
